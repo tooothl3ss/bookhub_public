@@ -1,54 +1,61 @@
+**English** | [Русский](README.ru.md)
+
 # BookHub
 
-Личная EPUB-библиотека с веб-полкой, синхронизацией места чтения и каталогом OPDS.
-Можно читать один EPUB на нескольких KOReader или CrossPoint; Kindle подключается через
-адаптер KFX ↔ EPUB. Интерфейс на русском.
+A personal EPUB library with a web shelf, reading-position sync and an OPDS catalog.
+You can read the same EPUB on several KOReader or CrossPoint devices; Kindle connects through
+a KFX ↔ EPUB adapter. The web interface is in Russian.
 
-Это ранняя версия для самостоятельной установки. Публичный репозиторий обновляется
-периодическими снимками; основная разработка ведётся отдельно. Постоянной поддержки и
-фиксированного графика обновлений нет. Версия этого снимка — в [SNAPSHOT.md](SNAPSHOT.md).
+This is an early release for self-hosting. The public repository is updated with periodic
+snapshots; main development happens elsewhere. There is no ongoing support and no fixed
+update schedule. The version of this snapshot is recorded in [SNAPSHOT.md](SNAPSHOT.md)
+(in Russian).
 
-## Что умеет
+## Features
 
-- Загрузка EPUB, обложки, поиск в каталоге, статусы и несколько версий одной книги.
-- Синхронизация точной позиции EPUB по KOSync между читалками.
-- Kindle: импорт KFX, сохранение EPUB из файлов без DRM и перевод позиции KFX ↔ EPUB.
-- OPDS: просмотр разделов библиотеки и скачивание основного EPUB прямо с читалки.
-- CrossPoint X3: ручная отправка EPUB, сведения о наличии файлов и получение позиции.
-- Обзоры, рекомендации и перевод описания через ИИ — только по нажатию кнопки.
+- EPUB upload, covers, catalog search, statuses and several versions of the same book.
+- Exact EPUB position sync between readers over KOSync.
+- Kindle: KFX import, EPUB extraction from DRM-free files and KFX ↔ EPUB position translation.
+- OPDS: browse library sections and download the main EPUB straight from the reader.
+- CrossPoint X3: manual EPUB transfer, file presence info and position retrieval.
+- AI reviews, recommendations and description translation — only when you press the button.
 
-ИИ и X3 необязательны. Для обычной EPUB-библиотеки Kindle тоже не нужен.
+AI and X3 are optional. A plain EPUB library doesn't need a Kindle either.
 
-## Перед запуском
+## Before you start
 
-**Веб-полка работает без авторизации.** Любой, кто имеет доступ к её порту, может читать,
-скачивать и удалять книги, менять настройки и запускать платные запросы к настроенному ИИ.
-Используй доверенную домашнюю сеть. Для внешнего доступа нужен VPN или HTTPS-прокси с
-авторизацией. Защита CORS не заменяет пароль. Пароль синка и OPDS не защищает веб-полку.
+**The web shelf has no authentication.** Anyone who can reach its port can read, download and
+delete books, change settings and trigger paid requests to the configured AI. Use a trusted
+home network. For outside access you need a VPN or an HTTPS proxy with authentication. CORS
+protection is not a substitute for a password. The sync and OPDS password does not protect
+the web shelf.
 
-По умолчанию порты доступны только с самого сервера (`127.0.0.1`). Книги и секреты хранятся
-локально и не входят в репозиторий. Подробности о данных — в [SECURITY.md](SECURITY.md).
+By default the ports are reachable only from the server itself (`127.0.0.1`). Books and
+secrets are stored locally and are not part of the repository. Details about your data are
+in [SECURITY.md](SECURITY.md) (in Russian).
 
-## Быстрый запуск
+## Quick start
 
-Нужны Docker Engine с Compose v2, Python 3 для создания настроек и интернет при сборке.
-Команды ниже выполняются из каталога скачанного или клонированного проекта.
+You need Docker Engine with Compose v2, Python 3 to generate the settings, and internet
+access during the build. Run the commands below from the downloaded or cloned project
+directory.
 
 ```sh
 python3 scripts/configure.py
 docker compose up -d --build --wait
 ```
 
-Первый шаг создаёт `.env` с отдельными случайными паролем синка и токеном Kindle. Повторный
-запуск существующий файл не перезаписывает. Альтернатива: скопировать `.env.example` в `.env`
-и самостоятельно заполнить `SYNC_PASSWORD` и `SYNC_API_KEY`; пустые значения не принимаются.
+The first step creates `.env` with a separate random sync password and Kindle token. Running
+it again does not overwrite an existing file. Alternatively, copy `.env.example` to `.env`
+and fill in `SYNC_PASSWORD` and `SYNC_API_KEY` yourself; empty values are rejected.
 
-Полка: **http://127.0.0.1:8088**. Нажми «Добавить книгу» → «Загрузить EPUB».
+The shelf is at **http://127.0.0.1:8088**. Click «Добавить книгу» (Add book) → «Загрузить
+EPUB» (Upload EPUB).
 
-Чтобы подключить читалки в домашней сети, укажи в `.env` в `BOOKHUB_BIND` локальный IP сервера
-(например, `192.168.1.10`). `0.0.0.0` открывает порты на всех интерфейсах — используй это
-значение только при подходящих правилах сети. Затем повтори `docker compose up -d`.
-Полка станет доступна по `http://<IP-сервера>:8088`.
+To connect readers on your home network, set `BOOKHUB_BIND` in `.env` to the server's local IP
+(for example, `192.168.1.10`). `0.0.0.0` opens the ports on all interfaces — use it only with
+suitable network rules. Then run `docker compose up -d` again. The shelf will be available at
+`http://<server-IP>:8088`.
 
 ```sh
 docker compose ps
@@ -57,103 +64,111 @@ docker compose stop
 docker compose start
 ```
 
-Приложение создаёт `data/` рядом с `compose.yaml`. Три контейнера используют общую SQLite-базу
-и файлы; отдельная СУБД не нужна. Если порты заняты, измени `WEB_PORT` и `SYNC_PORT` в `.env`.
+The application creates `data/` next to `compose.yaml`. The three containers share one SQLite
+database and the files; no separate DBMS is needed. If the ports are taken, change `WEB_PORT`
+and `SYNC_PORT` in `.env`.
 
-## Подключение читалок
+## Connecting readers
 
-| Читалка / функция | Адрес по умолчанию | Учётные данные из `.env` |
+| Reader / feature | Default address | Credentials from `.env` |
 |---|---|---|
-| KOReader / CrossPoint KOSync | `http://<IP-сервера>:8089` | `SYNC_USER`, `SYNC_PASSWORD` |
-| OPDS | `http://<IP-сервера>:8089/opds` | тот же логин и пароль, HTTP Basic |
-| Kindle | `http://<IP-сервера>:8088` | `SYNC_API_KEY` в клиенте Kindle |
+| KOReader / CrossPoint KOSync | `http://<server-IP>:8089` | `SYNC_USER`, `SYNC_PASSWORD` |
+| OPDS | `http://<server-IP>:8089/opds` | same login and password, HTTP Basic |
+| Kindle | `http://<server-IP>:8088` | `SYNC_API_KEY` in the Kindle client |
 
-На читалках должен быть **один и тот же EPUB**. Другая редакция книги может иметь другую
-разметку и независимую позицию. Процент показывается для удобства, но не служит основой
-перевода позиции. Неизвестный документ можно вручную связать с книгой в разделе «Устройства».
+The readers must have **the very same EPUB**. A different edition of the book may have
+different markup and an independent position. The percentage is shown for convenience but is
+not what position translation is based on. An unknown document can be linked to a book
+manually in the «Устройства» (Devices) section.
 
-Синхронизация автоматически двигает чтение вперёд. Для перечитывания есть сброс позиции.
-Старый офлайн-клиент KOSync после сброса способен снова отправить прежнее место: сначала
-синхронизируй устройства. Неоднозначная позиция Kindle не применяется наугад.
+Sync automatically moves reading forward only. To re-read a book, reset its position. A
+KOSync client that was offline may push the old position again after a reset, so sync your
+devices first. An ambiguous Kindle position is never applied by guesswork.
 
-В OPDS доступны книги с EPUB, кроме прочитанных и брошенных. Разделы каталога настраиваются
-на полке. Скачивание через OPDS делает сама читалка; файлы не отправляются автоматически.
+OPDS lists books that have an EPUB, except finished and dropped ones. Catalog sections are
+configured on the shelf. OPDS downloads are initiated by the reader; files are never pushed
+automatically.
 
-Клиент Kindle, требования и установка: [kindle-client/README.md](kindle-client/README.md).
-Технический протокол: [reader-sync/API.md](reader-sync/API.md).
+Kindle client, requirements and installation: [kindle-client/README.md](kindle-client/README.md)
+(in Russian). Technical protocol: [reader-sync/API.md](reader-sync/API.md).
 
-## ИИ и X3
+## AI and X3
 
-Для ИИ заполни `AI_URL` и `AI_MODEL`, при необходимости `AI_API_KEY`. Адрес — база сервиса,
-к которой приложение добавляет `/v1/chat/completions`; подойдёт совместимый сервер, включая
-Ollama. Адрес должен быть доступен из Docker: `localhost` внутри контейнера — сам контейнер.
-`AI_SUMMARY_MODEL` и `AI_HINT_MODEL` позволяют выбрать отдельные модели. После изменения
-`.env` выполни `docker compose up -d`.
+For AI, fill in `AI_URL` and `AI_MODEL`, plus `AI_API_KEY` if required. The URL is the service
+base to which the application appends `/v1/chat/completions`; any compatible server works,
+including Ollama. The address must be reachable from Docker: `localhost` inside a container
+is the container itself. `AI_SUMMARY_MODEL` and `AI_HINT_MODEL` let you pick separate models.
+After changing `.env`, run `docker compose up -d`.
 
-Обзоры, рекомендации, перевод описания и подсказки ИИ запускаются только вручную. Перевод
-сохраняется отдельно от оригинального описания. Пока ИИ не настроен, библиотека работает,
-а соответствующие кнопки недоступны.
+Reviews, recommendations, description translation and AI hints run only on demand. A
+translation is stored separately from the original description. Until AI is configured the
+library works normally and the corresponding buttons are disabled.
 
-Для передачи файлов CrossPoint X3 укажи `X3_URL` — адрес её Wi-Fi веб-сервиса — и при
-необходимости `X3_BOOKS_DIR`. Открой на читалке экран передачи файлов и используй «Отправить
-на X3». Это необязательно для обычного KOSync или OPDS. Для WebSocket-передачи серверу нужен
-доступ также к порту устройства на единицу выше порта его HTTP-сервиса.
+To transfer files to a CrossPoint X3, set `X3_URL` — the address of its Wi-Fi web service —
+and, if needed, `X3_BOOKS_DIR`. Open the file transfer screen on the reader and use
+«Отправить на X3» (Send to X3). None of this is needed for plain KOSync or OPDS. For WebSocket
+transfer the server also needs access to the device port one above its HTTP service port.
 
-При ручной связи с X3 полка обновляет список файлов, получает сохранённое место чтения и
-может удалить с X3 файлы ранее удалённых карточек. Она учитывает принадлежность файла книге;
-подробности текущего состояния видны в карточке и разделе «Устройства».
+When you manually connect to the X3, the shelf refreshes the file list, fetches the saved
+reading position and can remove files of previously deleted cards from the X3. It tracks
+which file belongs to which book; the current state is shown on the book card and in the
+«Устройства» (Devices) section.
 
-## Обновление и резервная копия
+## Updating and backups
 
-Перед обновлением останови все три процесса и скопируй **весь** `data/`, включая SQLite WAL,
-если он есть. Не копируй только основной файл базы во время работы приложения.
+Before updating, stop all three processes and copy the **whole** `data/` directory, including
+the SQLite WAL if present. Don't copy just the main database file while the application is
+running.
 
 ```sh
 docker compose stop
 tar -czf "../bookhub-data-$(date +%Y%m%d-%H%M%S).tar.gz" data
 ```
 
-Сохрани `.env` отдельно в защищённом месте. Получи новую опубликованную версию кода через
-`git pull --ff-only` или замену файлов из архива, сохранив свои `.env` и `data/`, затем:
+Keep `.env` separately in a safe place. Get the new published version of the code with
+`git pull --ff-only` or by replacing the files from an archive, keeping your `.env` and
+`data/`, then:
 
 ```sh
 docker compose up -d --build --wait
 ```
 
-Схема базы обновляется при старте. Для отката нужна резервная копия данных **и** прежняя
-версия приложения. Удаление карточки удаляет и принадлежащие ей файлы, если они больше нигде
-не используются; резервные копии не заменяются корзиной.
+The database schema is upgraded on startup. Rolling back requires a backup of the data **and**
+the previous version of the application. Deleting a card also deletes the files that belong
+to it if nothing else uses them; there is no recycle bin, so it is no substitute for backups.
 
-## Ограничения
+## Limitations
 
-- Один владелец библиотеки; отдельных пользователей и разграничения доступа на полке нет.
-- Kindle требует подготовленного устройства с доступом к shell; DRM не обходится.
-- Совместимость всех моделей Kindle и всех версий CrossPoint не гарантируется.
-- Большие EPUB и KFX требуют памяти и времени. HTTP-загрузка ограничена 256 МиБ;
-  суммарный распакованный размер EPUB ограничен 512 МиБ и 10000 файлами.
-- Поиск метаданных использует внешние каталоги; их доступность и полнота не гарантируются.
-- Пароли по HTTP не шифруются. За пределами доверенной сети используй VPN/HTTPS.
+- A single library owner; the shelf has no separate users or access control.
+- Kindle requires a prepared device with shell access; DRM is not circumvented.
+- Compatibility with every Kindle model and every CrossPoint version is not guaranteed.
+- Large EPUB and KFX files take memory and time. HTTP uploads are limited to 256 MiB;
+  the total unpacked size of an EPUB is limited to 512 MiB and 10,000 files.
+- Metadata lookup relies on external catalogs; their availability and completeness are not
+  guaranteed.
+- Passwords are not encrypted over HTTP. Outside a trusted network use VPN/HTTPS.
 
-## Как устроено и как проверить
+## How it works and how to test it
 
-`bookhub/` — приложение и адаптеры читалок. `myshelf/static/` — веб-интерфейс.
-Веб, синк и обработчик — три процесса одного образа с общей базой. Обработка KFX и ожидание
-ИИ вынесены в обработчик, чтобы не задерживать обычные запросы синхронизации.
-`reader-sync/app/` содержит совместимые импорты для тестов старого протокола; отдельный
-сервер из этого каталога запускать не нужно.
+`bookhub/` is the application and the reader adapters. `myshelf/static/` is the web interface.
+Web, sync and worker are three processes of a single image sharing one database. KFX
+processing and waiting for AI are moved to the worker so they don't hold up regular sync
+requests. `reader-sync/app/` contains compatibility imports for the legacy protocol tests;
+you don't need to run a separate server from that directory.
 
 ```sh
 docker build --target tests -t bookhub-public:tests .
 docker run --rm --network none -v "$PWD:/src:ro" bookhub-public:tests
 ```
 
-Тесты используют временные данные и не обращаются к рабочей библиотеке. Две проверки требуют
-собственных KFX/YJF-файлов и без них пропускаются. GitHub Actions запускает тесты и проверку
-совместной работы трёх процессов. Автотесты не заменяют проверку прошивки на реальной читалке.
+The tests use temporary data and never touch a live library. Two checks need your own
+KFX/YJF files and are skipped without them. GitHub Actions runs the tests and a check that
+the three processes work together. Automated tests don't replace verifying firmware on a
+real reader.
 
-## Лицензия
+## License
 
-Код BookHub, если в файле не указана другая лицензия, распространяется под **GPL-3.0-only**.
-Полный текст: [LICENSE](LICENSE). Пояснение: [LICENSE-INFO.md](LICENSE-INFO.md).
-Авторство и лицензии сторонних компонентов: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-Лицензия приложения не распространяется на загруженные пользователем книги.
+BookHub code is distributed under **GPL-3.0-only** unless a file states another license.
+Full text: [LICENSE](LICENSE). Explanation: [LICENSE-INFO.md](LICENSE-INFO.md) (in Russian).
+Attribution and licenses of third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The application license does not cover books uploaded by the user.
