@@ -1,0 +1,2924 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BookHub — библиотека</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23000000%22/><text x=%2250%22 y=%2250%22 font-family=%22Arial%22 font-weight=%22900%22 font-size=%2250%22 fill=%22%23f59e0b%22 text-anchor=%22middle%22 dy=%22.35em%22>BH</text></svg>">
+  <script src="/static/vendor/tailwind-3.4.17.js"></script>
+  <script defer src="/static/vendor/alpine-3.17.4.min.js"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+
+    /* Base styles */
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+    .clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+    .clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* Effects */
+    .shadow-soft { box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); }
+    .shadow-glow { box-shadow: 0 0 25px rgba(245, 158, 11, 0.1); }
+    /* Элегантные абзацы для обзора */
+.review-text {
+    white-space: pre-wrap;
+    line-height: 1.6;
+    letter-spacing: 0.01em;
+}
+
+.review-text:empty::before {
+    content: "Описание отсутствует...";
+    color: #4b5563;
+    font-style: italic;
+}
+    .spoiler { filter: blur(8px); transition: .3s; cursor: pointer; user-select: none; }
+    .revealed { filter: blur(0); }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #000; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #ca8a04; }
+    button, a, input, select, summary { touch-action: manipulation; }
+    button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+      outline: 2px solid #fbbf24; outline-offset: 4px;
+    }
+    summary { cursor: pointer; }
+    .book-actions[open] > div { position: absolute; right: 0; top: 100%; width: min(280px, 80vw); z-index: 10; }
+    .modal-panel { max-height: 92dvh; }
+    /* Shared book UI: neutral surfaces, one action style, colour only in status dots. */
+    .bh-indicators { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .bh-chip {
+      display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+      padding: 4px 8px; border: 1px solid #303035; border-radius: 6px;
+      background: #171719; color: #d4d4d8; font-size: 12px; font-weight: 400;
+      line-height: 1.4; text-transform: none; letter-spacing: normal;
+    }
+    .bh-chip::before { content: ''; width: 5px; height: 5px; flex-shrink: 0; border-radius: 50%; background: #71717a; }
+    .bh-chip[data-state="ready"]::before { background: #6bbd96; }
+    .bh-chip[data-state="pending"]::before { background: #e3b35e; }
+    .bh-chip[data-state="error"]::before { background: #f87171; }
+    .bh-cover-info { position: absolute; bottom: 4px; inset-inline: 0; padding: 28px 7px 7px; background: linear-gradient(transparent, #000c); }
+    .bh-cover-info .bh-indicators { gap: 4px; }
+    .bh-cover-info .bh-chip { padding: 3px 5px; gap: 4px; font-size: 10px; background: #18181be6; border-color: #ffffff26; color: #f4f4f5; }
+    .bh-cover-heading { position: absolute; top: 8px; inset-inline: 8px; display: flex; flex-wrap: wrap; align-items: start; gap: 4px; }
+    .bh-cover-status { min-width: 0; max-width: 100%; font-size: 10px; letter-spacing: normal; }
+    .bh-cover-percent { margin-left: auto; padding: 2px 5px; border-radius: 4px; background: #18181be6; color: #f4f4f5; font-size: 11px; }
+    .bh-book { background: #101012; color: #d4d4d8; }
+    .bh-book-body { padding: 24px; overflow-y: auto; }
+    .bh-book-header { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 16px 24px; }
+    .bh-book-cover { width: 128px; aspect-ratio: 2/3; object-fit: cover; border-radius: 8px; grid-row: span 2; border: 1px solid #303035; }
+    .bh-book-heading { min-width: 0; }
+    .bh-book-summary { min-width: 0; display: grid; gap: 16px; align-content: start; }
+    .bh-book h1 { font-size: 28px; line-height: 1.2; font-weight: 700; }
+    .bh-section { margin-top: 24px; padding-top: 24px; border-top: 1px solid #29292e; }
+    .bh-section-title { color: #f4f4f5; font-size: 17px; font-weight: 600; line-height: 1.5; }
+    .bh-section-heading { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .bh-copy { color: #c9c9ce; font-size: 14px; line-height: 1.7; white-space: pre-line; }
+    .bh-surface { padding: 16px; border: 1px solid #303035; border-radius: 10px; background: #141416; }
+    .bh-button, .bh-input {
+      min-height: 38px; padding: 8px 12px; border: 1px solid #3f3f46; border-radius: 8px;
+      background: #18181b; color: #e4e4e7; font-size: 13px; line-height: 20px; font-weight: 500;
+      transition: background-color .15s, border-color .15s, color .15s;
+    }
+    .bh-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
+    .bh-button:hover { background: #242428; border-color: #71717a; color: #fff; }
+    .bh-button:disabled, .bh-button:has(input:disabled) { opacity: .4; cursor: default; }
+    .bh-button-primary { background: #f59e0b; color: #101012; border-color: #f59e0b; font-weight: 600; }
+    .bh-button-primary:hover { background: #fbbf24; color: #101012; border-color: #fbbf24; }
+    .bh-button-danger { color: #fca5a5; }
+    .bh-button-danger:hover { border-color: #b45353; color: #fecaca; }
+    .bh-button:focus-within { outline: 2px solid #fbbf24; outline-offset: 3px; }
+    .bh-status-editor { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .bh-status-editor > select { flex: 1; min-width: 0; max-width: 260px; }
+    .bh-progress { font-size: 13px; color: #a1a1aa; }
+    .bh-progress-track { height: 3px; background: #303035; overflow: hidden; border-radius: 3px; margin-top: 8px; }
+    .bh-progress-fill { height: 100%; background: #f59e0b; border-radius: inherit; }
+    .bh-accordion > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; }
+    .bh-accordion > summary::-webkit-details-marker { display: none; }
+    .bh-accordion > summary::after { content: '+'; color: #a1a1aa; font-size: 20px; font-weight: 400; }
+    .bh-accordion[open] > summary::after { content: '−'; }
+    .bh-book .book-actions summary { list-style: none; }
+    .bh-book .book-actions summary::-webkit-details-marker { display: none; }
+    @media (max-width: 640px) {
+      .bh-book-body { padding: 20px 16px; }
+      .bh-book-header { grid-template-columns: 88px minmax(0, 1fr); gap: 16px; }
+      .bh-book-cover { width: 88px; grid-row: auto; }
+      .bh-book-summary { grid-column: 1 / -1; }
+      .bh-book h1 { font-size: 22px; }
+      .bh-button, .bh-input { min-height: 44px; }
+      .bh-status-editor > select { max-width: none; }
+    }
+    @media (max-width: 640px) {
+      button, summary, select, .file-action { min-height: 44px; }
+      .file-action { display: inline-flex; align-items: center; }
+      .book-actions button { width: 100%; }
+    }
+  </style>
+</head>
+
+<body class="bg-black text-gray-300 antialiased selection:bg-amber-500 selection:text-black" x-data="app()" x-init="init()" @keydown.window="handleModalKey($event)" x-effect="document.body.style.overflow = (detailOpen || editing || recommendationDetailOpen || addOpen) ? 'hidden' : ''">
+
+  <nav aria-label="Главная навигация" class="border-b border-gray-800 sticky top-0 bg-black/95 backdrop-blur-xl z-40">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3">
+      <button @click="navigate('library')" class="group flex items-center gap-1 font-black text-xl tracking-tight select-none cursor-pointer transition-transform active:scale-95" aria-label="BookHub — библиотека">
+        <span class="bg-white text-black px-2 py-0.5 rounded transition-transform group-hover:rotate-[-2deg]">Book</span><span class="bg-amber-500 text-black px-2 py-0.5 rounded transition-transform group-hover:rotate-[2deg]">Hub</span>
+      </button>
+      <button @click="showAdd()" aria-label="+ Добавить книгу" class="ml-auto rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm px-4 py-2"><span class="sm:hidden">+ Добавить</span><span class="hidden sm:inline">+ Добавить книгу</span></button>
+      <div class="flex w-full sm:w-auto gap-1 overflow-x-auto text-xs sm:text-sm" role="group" aria-label="Разделы">
+        <template x-for="item in navigation" :key="item.key">
+          <button @click="navigate(item.key)" :aria-current="tab === item.key ? 'page' : null"
+                  :class="tab === item.key ? 'bg-gray-800 text-amber-400 shadow-lg' : 'text-gray-400 hover:text-white'"
+                  class="flex-1 sm:flex-none px-2 sm:px-3 py-2 rounded-lg whitespace-nowrap transition-all" x-text="item.label"></button>
+        </template>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-6xl mx-auto p-4 sm:p-6">
+
+    <section x-show="tab === 'search'" x-cloak class="max-w-3xl mx-auto">
+      <div class="bg-[#111] border border-gray-800 rounded-2xl p-6 shadow-glow">
+        <h2 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <span>🔍</span> Каталог книг
+        </h2>
+
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            x-model="query"
+            @input.debounce.350ms="search()"
+            placeholder="Название, автор или жанр..."
+            class="flex-1 h-12 bg-black border border-gray-700 px-4 rounded-xl focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-gray-600"
+          />
+
+          <div class="flex gap-2">
+            <select
+              x-model="addStatus"
+              class="h-12 bg-black border border-gray-700 px-3 rounded-xl outline-none text-sm focus:border-gray-500 cursor-pointer"
+            >
+              <option value="want">В планах</option>
+              <option value="reading">В процессе</option>
+              <option value="read">Прочитано</option>
+              <option value="dropped">Бросил</option>
+            </select>
+
+            <button
+              @click="addSelected()"
+              :disabled="!selected || loading"
+              class="h-12 px-6 rounded-xl font-bold text-black transition-all whitespace-nowrap
+                     bg-amber-500 hover:bg-amber-400 disabled:opacity-30 disabled:hover:bg-amber-500"
+            >
+              Добавить
+            </button>
+          </div>
+        </div>
+
+        <div x-show="selected" x-cloak class="mt-6 bg-amber-900/10 rounded-xl p-4 border border-amber-500/30 flex gap-4 relative animate-fade-in">
+           <img :src="selected?.cover || placeholderCover()" @error="onImgError($event)" class="w-14 h-20 object-cover rounded shadow-lg">
+           <div class="min-w-0 flex-1">
+             <div class="text-white font-bold truncate" x-text="displayTitle(selected)"></div>
+             <div x-show="originalTitle(selected)" class="text-gray-400 text-xs truncate" x-text="originalTitle(selected)"></div>
+             <div class="text-gray-400 text-sm truncate" x-text="selected?.authors"></div>
+             <div class="mt-1 text-xs text-amber-500 font-mono">Готово к добавлению...</div>
+           </div>
+           <button @click="selected = null" class="absolute top-2 right-2 text-gray-400 hover:text-white px-2 text-xl">×</button>
+        </div>
+
+        <button x-show="reader.ai" @click="manualAiSearch()" :disabled="aiSearching || query.trim().length < 3" class="mt-4 text-sky-400 text-xs disabled:opacity-30">Поиск с ИИ</button>
+
+        <div class="mt-6 space-y-2">
+          <div x-show="loading" x-cloak class="text-center py-8 text-amber-500 font-mono text-sm animate-pulse">
+            Ищем в базе данных...
+          </div>
+          <div x-show="aiSearching" x-cloak class="text-center py-3 text-sky-400 font-mono text-xs animate-pulse">
+            AI подбирает книги и русские названия...
+          </div>
+
+          <template x-for="item in results" :key="item.source_id">
+            <div
+              class="p-3 rounded-xl flex gap-4 items-center transition-colors border border-transparent bg-gray-900/40 hover:bg-gray-800/60"
+              :class="selected?.source_id === item.source_id ? 'ring-1 ring-amber-500/50 bg-gray-800' : ''"
+            >
+              <div class="flex gap-4 items-center flex-1 cursor-pointer min-w-0" @click="selectResult(item)">
+                <img :src="item.cover || placeholderCover()" @error="onImgError($event)" class="w-10 h-14 object-cover rounded bg-gray-800 shrink-0">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span x-show="item.hint" class="shrink-0 px-1.5 py-0.5 rounded text-xs font-black bg-sky-400 text-black" :title="'Подсказка AI: ' + item.hint">AI</span>
+                    <div class="text-gray-200 font-bold truncate text-sm" x-text="displayTitle(item)"></div>
+                  </div>
+                  <div x-show="originalTitle(item)" class="text-gray-400 text-xs truncate" x-text="originalTitle(item)"></div>
+                  <div class="text-gray-400 text-xs truncate" x-text="item.authors"></div>
+                </div>
+              </div>
+
+              <div class="flex gap-2 shrink-0">
+                <button
+                   @click="selectResult(item)"
+                   class="hidden sm:block text-xs font-bold text-gray-400 px-3 py-2 rounded-lg border border-gray-700 hover:text-white hover:border-gray-500"
+                >
+                  Глянуть
+                </button>
+                <button
+                   @click="quickAdd(item)"
+                   class="text-xs font-bold text-black px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 transition-colors"
+                   title="Сразу добавить в планы"
+                >
+                  + В планы
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </section>
+
+    <section x-show="tab === 'library'" x-cloak>
+
+      <div class="grid grid-cols-[1fr_auto_auto] sm:flex sm:flex-wrap items-center gap-3 mb-4 sm:mb-6">
+        <h1 class="text-2xl font-bold text-white">Библиотека</h1>
+        <div class="relative w-full col-span-3 row-start-2 sm:w-72 sm:ml-auto">
+          <input type="search" x-model.debounce.200ms="libraryQuery" aria-label="Поиск по библиотеке" placeholder="Поиск по библиотеке…"
+                 class="w-full h-11 bg-gray-900 border border-gray-700 px-3 rounded-lg text-sm text-white focus:border-amber-500 outline-none">
+        </div>
+        <button @click="loadLibrary()" :disabled="libraryLoading" class="px-3 py-2 rounded-lg border border-gray-700 text-gray-300" aria-label="Обновить библиотеку">↻</button>
+        <details class="relative book-actions">
+          <summary class="px-3 py-2 rounded-lg border border-gray-700 text-sm">Ещё</summary>
+          <div class="p-3 rounded-lg border border-gray-700 bg-gray-900 shadow-xl">
+            <button x-show="reader.ai" @click="translateTitles()" class="text-sky-300 text-sm text-left">Создать русские названия с ИИ</button>
+            <span x-show="!reader.ai" class="text-sm text-gray-400">ИИ не настроен</span>
+          </div>
+        </details>
+      </div>
+      <div class="flex gap-2 mb-4 sm:hidden">
+        <select x-model="shelf" aria-label="Полка" class="min-w-0 flex-1 rounded-lg bg-gray-900 border border-gray-700 text-white px-3 text-sm">
+          <template x-for="item in shelfTabs" :key="item.key"><option :value="item.key" x-text="item.label + ' · ' + countByShelf(item.key)"></option></template>
+        </select>
+        <button @click="mobileFilters = !mobileFilters" :aria-expanded="mobileFilters" class="px-3 py-2 border rounded-lg text-sm"
+                :class="fileFilter === 'all' ? 'border-gray-700 text-gray-300' : 'border-sky-500 text-sky-300'"
+                x-text="fileFilter === 'all' ? 'Фильтры' : fileFilters.find(f => f.key === fileFilter)?.label"></button>
+      </div>
+      <div class="hidden sm:flex flex-wrap gap-2 mb-6">
+        <template x-for="item in shelfTabs" :key="item.key">
+          <button @click="shelf = item.key" :aria-pressed="shelf === item.key"
+                  class="px-3 py-2 rounded-lg text-sm border flex items-center gap-2 transition-colors"
+                  :class="shelf === item.key ? 'bg-amber-500 text-black border-amber-500 shadow-glow' : 'text-gray-300 border-gray-700 hover:border-gray-500'">
+            <span x-text="item.label"></span><span class="opacity-70 tabular-nums" x-text="countByShelf(item.key)"></span>
+          </button>
+        </template>
+      </div>
+      <button x-show="attentionCount()" @click="navigate('devices'); attentionOpen = true"
+              class="mb-4 text-sm text-amber-400 border border-amber-900 rounded-lg px-3 py-2"
+              x-text="'Требуют внимания: ' + attentionCount()"></button>
+      <div :class="mobileFilters ? 'flex' : 'hidden sm:flex'" class="flex-wrap items-center gap-2 mb-6">
+        <span class="text-xs font-bold text-gray-400 uppercase tracking-widest mr-1">Файлы:</span>
+        <template x-for="f in fileFilters" :key="f.key">
+          <button
+            @click="fileFilter = f.key"
+            class="px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors flex items-center gap-2"
+            :class="fileFilter === f.key
+              ? 'bg-sky-400 text-black border-sky-400'
+              : 'bg-transparent text-gray-400 border-gray-800 hover:border-gray-600 hover:text-gray-300'"
+          >
+            <span x-text="f.label"></span>
+            <span class="bg-black/30 px-1.5 rounded text-xs tabular-nums" x-text="countByFile(f.key)"></span>
+          </button>
+        </template>
+
+      </div>
+
+      <div x-show="libraryLoading && !libraryLoaded" class="py-20 text-center text-gray-300" role="status">Загружаю библиотеку…</div>
+      <div x-show="libraryError" class="mb-6 p-4 rounded-lg border border-red-900 text-red-300" role="alert">
+        <span x-text="libraryError"></span><button @click="loadLibrary()" class="ml-3 underline">Повторить</button>
+      </div>
+      <div x-show="libraryLoaded && !libraryError && filteredLibrary().length === 0" x-cloak class="py-20 text-center space-y-3">
+        <div class="text-gray-200 font-bold" x-text="library.length ? 'На этой полке ничего не найдено' : 'Добавь первую книгу'"></div>
+        <p class="text-sm text-gray-400" x-text="library.length ? 'Попробуй другой запрос или сбрось фильтры.' : 'Загрузи EPUB или найди книгу в каталоге.'"></p>
+        <button x-show="library.length" @click="shelf = 'all'; fileFilter = 'all'; libraryQuery = ''" class="px-4 py-2 rounded-lg border border-gray-700 text-amber-400">Сбросить фильтры</button>
+        <button x-show="!library.length" @click="showAdd()" class="px-4 py-2 rounded-lg bg-amber-500 text-black font-bold">Добавить книгу</button>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
+        <template x-for="book in filteredLibrary()" :key="book.id">
+
+          <div
+            @click="openDetail(book)" @keydown.enter.prevent="openDetail(book)" @keydown.space.prevent="openDetail(book)" role="button" tabindex="0" :aria-label="displayTitle(book)"
+            class="group cursor-pointer flex flex-col gap-3"
+          >
+            <div class="relative aspect-[2/3] w-full overflow-hidden rounded-lg shadow-black/60 shadow-lg border border-gray-800/40 group-hover:border-amber-500/50 transition-all duration-300">
+              <img
+                :src="coverSrc(book)"
+                @error="onImgError($event)"
+                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+              >
+
+              <div class="bh-cover-heading">
+              <div class="bh-cover-status px-1.5 py-0.5 rounded font-black uppercase text-black shadow-md"
+                   :class="statusBadgeColor(book.status)"
+                   :title="book.status === 'dropped' ? dropReasonLabel(book.drop_reason) : ''"
+                   x-text="statusLabelShort(book.status)">
+              </div>
+              <span x-show="hasBookProgress(book)" class="bh-cover-percent" :title="'Прочитано ' + bookPercentText(book)" x-text="bookPercentText(book)"></span>
+              </div>
+
+              <div x-show="bookPercent(book) > 0" class="absolute bottom-0 inset-x-0 h-1 bg-black/70">
+                <div class="bh-progress-fill" :style="`width:${bookPercent(book)}%`"></div>
+              </div>
+
+              <div class="bh-cover-info"><div class="bh-indicators" aria-label="Файл и устройства">
+                <template x-for="indicator in coverIndicators(book)" :key="indicator.key">
+                  <span class="bh-chip" :data-state="indicator.state" :title="indicator.label + '. ' + indicator.title" :aria-label="indicator.label" x-text="indicator.shortLabel"></span>
+                </template>
+              </div></div>
+              <div class="absolute inset-0 bg-black/0 group-hover:bg-white/5 transition-colors pointer-events-none"></div>
+            </div>
+
+            <div class="px-1">
+              <div class="text-gray-200 font-bold text-sm leading-tight clamp-2 group-hover:text-amber-500 transition-colors" x-text="displayTitle(book)" :title="originalTitle(book)"></div>
+              <div class="text-gray-400 text-xs mt-1 clamp-1 font-medium" x-text="book.authors"></div>
+            </div>
+          </div>
+
+        </template>
+      </div>
+    </section>
+
+    <section x-show="tab === 'devices'" x-cloak class="max-w-4xl mx-auto space-y-8 text-sm">
+      <div class="flex flex-wrap gap-3 items-center">
+        <h1 class="text-2xl text-white font-bold">Устройства</h1>
+        <button @click="loadDevices(); loadReaderStatus(); loadOpdsMenu()" class="ml-auto px-3 py-2 rounded-lg border border-gray-700">Обновить</button>
+      </div>
+      <p class="text-gray-400">Последняя связь показывает, когда устройство обращалось к серверу. Она не означает, что устройство сейчас в сети.</p>
+      <div class="p-4 rounded-lg border border-gray-800 flex flex-wrap gap-3 items-center">
+        <span :class="serviceHealth().ok ? 'text-emerald-300' : 'text-red-300'" x-text="serviceHealth().text"></span>
+        <button @click="syncReader()" class="ml-auto text-sky-300">Проверить данные книг</button>
+      </div>
+      <p x-show="devicesLoading" role="status">Загружаю устройства…</p>
+      <p x-show="devicesError" class="text-red-300" role="alert" x-text="devicesError"></p>
+      <p x-show="!devicesLoading && !devicesError && !deviceCards().length" class="text-gray-400">Устройства ещё не подключались. После первой синхронизации они появятся здесь.</p>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <template x-for="device in deviceCards()" :key="device.key">
+          <div class="p-4 border border-gray-800 rounded-xl space-y-2 min-w-0">
+            <h2 class="text-white font-bold" x-text="device.name"></h2>
+            <p class="text-gray-400 break-all" x-text="device.id"></p>
+            <p x-text="'Последняя связь: ' + unixDate(device.seen)"></p>
+            <p class="text-gray-400" x-text="device.note"></p>
+          </div>
+        </template>
+      </div>
+      <details :open="attentionOpen" @toggle="attentionOpen = $el.open" class="rounded-xl border border-gray-800 p-4">
+        <summary class="text-amber-400 font-bold" x-text="'Требуют внимания: ' + attentionCount()"></summary>
+        <div class="pt-6">
+          <p x-show="!attentionCount()" class="text-gray-400">Нет запросов, требующих ручной привязки.</p>
+      <div x-show="reader.unbound_documents?.length" x-cloak class="-mt-2 mb-8 p-4 rounded-xl border border-amber-500/30 bg-amber-900/10 text-xs">
+        <div class="text-amber-500 font-bold text-sm">Запросы читалок без книги</div>
+        <div class="text-gray-400 mt-1">Выбери книгу и тот EPUB, который открыт на устройстве.</div>
+        <template x-for="d in reader.unbound_documents" :key="d.document">
+          <div class="flex flex-wrap items-center gap-2 mt-3">
+            <span class="text-gray-300 font-bold" x-text="d.device || 'Читалка'"></span>
+            <span class="text-gray-400" x-text="unixDate(d.received_at) + (d.percentage != null ? ' · ≈ ' + (d.percentage * 100).toFixed(1) + '%' : '')"></span>
+            <code class="text-gray-400" x-text="d.document.slice(0, 8) + '…'" :title="d.document"></code>
+            <select x-model="bindChoice[d.document]" class="bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500 max-w-full">
+              <option value="">Какая это книга…</option>
+              <template x-for="t in bindTargets()" :key="t.key">
+                <option :value="t.key" x-text="t.label"></option>
+              </template>
+            </select>
+            <button @click="bindDocument(d.document, bindChoice[d.document])" :disabled="!bindChoice[d.document] || readerBusy"
+                    class="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-black font-bold disabled:opacity-30">Связать</button>
+            <button @click="forgetDocument(d.document)" :disabled="readerBusy"
+                    class="px-3 py-1 rounded border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white disabled:opacity-30">Убрать</button>
+          </div>
+        </template>
+      </div>
+
+      <div x-show="reader.incoming?.length" x-cloak class="-mt-2 mb-8 p-4 rounded-xl border border-sky-500/30 bg-sky-900/10 text-xs">
+        <div class="text-sky-400 font-bold text-sm">EPUB из bookbot: связь с Kindle</div>
+        <div class="text-gray-400 mt-1">Прицепятся сами, когда Kindle получит книгу и агент её увидит — по имени файла. Если не совпало — выбери книгу руками.</div>
+        <template x-for="inc in reader.incoming" :key="inc.id">
+          <div class="flex flex-wrap items-center gap-2 mt-3">
+            <span class="text-gray-300 font-bold break-all" x-text="inc.filename"></span>
+            <span class="text-gray-400" x-text="fullDate(inc.created_at) + ' · ' + (inc.size / 1048576).toFixed(1) + ' МБ'"></span>
+            <span x-show="inc.error" class="text-red-400 break-all" x-text="inc.error"></span>
+            <select x-model="incomingChoice[inc.id]" class="bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-sky-500 max-w-full">
+              <option value="">Файл Kindle…</option>
+              <template x-for="t in kindleBindTargets()" :key="t.key">
+                <option :value="t.key" x-text="t.label"></option>
+              </template>
+            </select>
+            <button @click="attachIncoming(inc.id)" :disabled="!incomingChoice[inc.id] || readerBusy"
+                    class="px-3 py-1 rounded bg-sky-500 hover:bg-sky-400 text-black font-bold disabled:opacity-30">Связать с Kindle</button>
+            <button @click="deleteIncoming(inc)" :disabled="readerBusy"
+                    class="px-3 py-1 rounded border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white disabled:opacity-30">Убрать</button>
+          </div>
+        </template>
+      </div>
+
+        </div>
+      </details>
+      <div x-show="reader.x3?.enabled" class="space-y-6">
+      <h2 class="text-xl text-white font-bold">Передача файлов на X3</h2>
+      <div class="p-5 rounded-xl border border-gray-800 bg-gray-900/40 flex flex-wrap items-center gap-4">
+        <span class="w-2.5 h-2.5 rounded-full" :class="reader.x3?.online ? 'bg-emerald-400' : (reader.x3?.online === false ? 'bg-gray-500' : 'bg-gray-600')"></span>
+        <div class="min-w-0">
+          <div class="text-white font-bold" x-text="x3StateLine()"></div>
+          <div class="text-gray-400 text-xs mt-1">Для отправки открой передачу файлов на X3, затем выбери EPUB в карточке книги. Отправка запускается только кнопкой; доступность передачи не определяет работу синхронизации чтения.</div>
+        </div>
+        <button @click="checkX3()" :disabled="x3Checking" class="ml-auto px-4 py-2 rounded-lg bg-violet-500 hover:bg-violet-400 text-black text-xs font-bold disabled:opacity-30"
+                x-text="x3Checking ? 'Проверяю…' : 'Проверить X3'"></button>
+        <div x-show="x3Device?.status?.version" class="w-full pt-4 border-t border-gray-800">
+          <div x-show="!x3Device?.online" class="text-xs text-gray-400 mb-3"
+               x-text="'Данные на момент последней связи' + (x3Device?.last_online ? ' — ' + fullDate(x3Device.last_online) : '')"></div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-xs">
+            <template x-for="f in x3DeviceFields()" :key="f.label">
+              <div class="min-w-0">
+                <div class="text-xs text-gray-400 uppercase font-bold tracking-wider" x-text="f.label"></div>
+                <div class="text-gray-300 mt-0.5 break-words" x-text="f.value"></div>
+                <a x-show="f.link" :href="f.link" target="_blank" rel="noopener" class="text-violet-400 hover:text-violet-300" x-text="f.note"></a>
+                <div x-show="f.note && !f.link" class="text-gray-400" x-text="f.note"></div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Сохранённые заявки</h3>
+        <div x-show="!x3Queue().length" class="p-4 rounded-lg border border-gray-800/60 text-gray-400 text-xs">Отправка только вручную: выбери EPUB на странице книги и нажми «Отправить на X3».</div>
+        <template x-for="q in x3Queue()" :key="q.key">
+          <div class="p-3 mb-2 rounded-lg border border-gray-800 bg-black/40 flex flex-wrap items-center gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="text-gray-200 font-bold" x-text="x3BookTitle(q.key)"></div>
+              <div class="text-gray-400 text-xs break-all" x-text="q.filename + ' · ' + (q.source === 'bookbot' ? 'из bookbot' : 'вручную') + ' · ' + fullDate(q.created_at)"></div>
+              <div x-show="reader.x3?.sending === q.filename" class="text-violet-300 text-xs animate-pulse mt-1">отправляю…</div>
+              <div x-show="q.error" class="text-xs mt-1 break-words" :class="q.status === 'error' ? 'text-red-400' : 'text-amber-500/80'"
+                   x-text="q.error + (q.attempts ? ' · попыток: ' + q.attempts : '')"></div>
+            </div>
+            <button x-show="q.status !== 'error'" @click="sendToX3(q.key)" :disabled="readerBusy" class="px-3 py-1.5 rounded bg-violet-500 hover:bg-violet-400 text-black text-xs font-bold disabled:opacity-30">Отправить сейчас</button>
+            <button @click="dequeueX3(q.key)" class="px-3 py-1.5 rounded border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white text-xs">Убрать</button>
+          </div>
+        </template>
+      </div>
+
+      <div>
+        <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Отправлено</h3>
+        <div x-show="!(reader.x3?.history || []).length" class="p-4 rounded-lg border border-gray-800/60 text-gray-400 text-xs">Пока ничего.</div>
+        <template x-for="h in reader.x3?.history || []" :key="h.filename">
+          <div class="py-2 border-b border-gray-900 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span class="text-gray-300 font-bold" x-text="x3BookTitle(h.key)"></span>
+            <span class="text-gray-400 text-xs break-all" x-text="h.filename"></span>
+            <span class="ml-auto text-gray-400 text-xs" x-text="fullDate(h.sent_at) + ' · ' + (h.source === 'bookbot' ? 'bookbot' : 'вручную')"></span>
+          </div>
+        </template>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">На X3 сейчас</h3>
+          <button @click="loadX3Files()" :disabled="x3FilesLoading" class="text-xs text-gray-400 hover:text-white disabled:opacity-30" x-text="x3FilesLoading ? 'смотрю…' : 'обновить'"></button>
+        </div>
+        <div x-show="x3FilesError" class="p-4 rounded-lg border border-gray-800/60 text-gray-400 text-xs" x-text="x3FilesError"></div>
+        <template x-for="f in x3Files" :key="f.name">
+          <div class="py-2 border-b border-gray-900 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span class="text-gray-300 break-all" x-text="f.name"></span>
+            <span class="text-gray-400 text-xs" x-text="f.size ? (f.size / 1048576).toFixed(1) + ' МБ' : ''"></span>
+            <span class="ml-auto text-xs" :class="f.key ? 'text-emerald-400/80' : 'text-gray-400'"
+                  x-text="f.key ? 'связан · ' + x3BookTitle(f.key) : (f.epub ? 'не связан с полкой' : '')"></span>
+          </div>
+        </template>
+      </div>
+      </div>
+
+      <section aria-label="Каталог для читалок (OPDS)" class="space-y-4">
+        <h2 class="text-xl text-white font-bold">Каталог для читалок (OPDS)</h2>
+        <p x-show="opdsLoading && !opds" role="status">Загружаю настройки каталога…</p>
+        <p x-show="opdsError" class="text-red-300" role="alert">
+          <span x-text="opdsError"></span><button @click="loadOpdsMenu()" class="ml-3 underline">Повторить</button>
+        </p>
+        <fieldset x-show="opds" :disabled="opdsBusy" class="min-w-0 space-y-4">
+          <div class="p-5 rounded-xl border border-gray-800 bg-gray-900/40 space-y-2">
+            <code class="block text-white break-all select-all" x-text="opdsUrl()"></code>
+            <p x-show="opds?.enabled" class="text-gray-400 text-xs">Этот адрес вводится в читалке. Вход — с логином и паролем синка, теми же, что для KOSync.</p>
+            <p x-show="opds && !opds.enabled" class="text-amber-400 text-xs">Каталог выключен: не задан пароль синка (SYNC_PASSWORD). Меню можно настроить заранее.</p>
+            <p class="text-gray-400 text-xs">В каталог попадают книги с EPUB, кроме прочитанных и брошенных.</p>
+          </div>
+          <label class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>Книг на странице</span>
+            <input type="number" min="5" max="60" step="1" x-model="opdsDraft.page_size"
+                   class="w-20 bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500">
+            <span class="text-gray-400 text-xs">От 5 до 60. По умолчанию 20: в длинном списке прошивка X3 (1.6.5) может терять выделение при прокрутке.</span>
+          </label>
+          <div class="space-y-2">
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Разделы меню</h3>
+            <template x-for="(s, i) in opdsDraft.sections" :key="s.key">
+              <div class="p-3 rounded-lg border border-gray-800 bg-black/40 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <label class="relative shrink-0 p-2 -m-2 cursor-pointer" :title="s.enabled ? 'Раздел есть в меню читалки' : 'Раздел скрыт'">
+                  <input type="checkbox" role="switch" x-model="s.enabled" :aria-label="'Показывать раздел «' + s.title + '»'" class="sr-only peer">
+                  <span class="block w-9 h-5 rounded-full bg-gray-700 transition-colors peer-checked:bg-amber-500 peer-disabled:opacity-40 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-400 after:content-[''] after:block after:w-4 after:h-4 after:m-0.5 after:rounded-full after:bg-gray-400 after:transition-transform peer-checked:after:translate-x-4 peer-checked:after:bg-black"></span>
+                </label>
+                <input type="text" maxlength="60" x-model="s.title" aria-label="Название раздела"
+                       class="min-w-0 flex-1 basis-40 bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500">
+                <span class="text-gray-400 text-xs tabular-nums" :title="s.id ? null : 'Книги посчитает сервер после сохранения'" x-text="opdsCount(s)"></span>
+                <select x-model="s.sort" aria-label="Сортировка раздела" class="bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500 max-w-full">
+                  <template x-for="key in opds?.filters?.sort || []" :key="key">
+                    <option :value="key" x-text="opdsSortLabels[key] || key"></option>
+                  </template>
+                </select>
+                <button @click="moveOpdsSection(i, -1)" :disabled="i === 0" aria-label="Поднять раздел" title="Выше"
+                        class="px-3 py-1 rounded border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white disabled:opacity-30">↑</button>
+                <button @click="moveOpdsSection(i, 1)" :disabled="i === opdsDraft.sections.length - 1" aria-label="Опустить раздел" title="Ниже"
+                        class="px-3 py-1 rounded border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white disabled:opacity-30">↓</button>
+                <button x-show="!s.builtin" @click="removeOpdsSection(i)"
+                        class="px-3 py-1 rounded border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white disabled:opacity-30">Удалить</button>
+                <p class="w-full text-gray-400 text-xs" x-text="opdsFilterText(s)"></p>
+              </div>
+            </template>
+          </div>
+          <button x-show="!opdsAddOpen" @click="opdsAddOpen = true" class="px-3 py-2 rounded-lg border border-gray-700 hover:border-gray-500 disabled:opacity-30">Добавить раздел</button>
+          <div x-show="opdsAddOpen" class="p-4 rounded-xl border border-gray-800 space-y-3">
+            <div class="text-white font-bold">Новый раздел</div>
+            <input type="text" maxlength="60" x-model="opdsNew.title" placeholder="Название раздела" aria-label="Название нового раздела"
+                   class="w-full bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500 placeholder-gray-600">
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span class="text-gray-400">Статус:</span>
+              <template x-for="key in opds?.filters?.status || []" :key="key">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" :value="key" x-model="opdsNew.status" class="accent-amber-500"><span x-text="opdsStatusLabels[key] || key"></span>
+                </label>
+              </template>
+              <span class="text-gray-400 text-xs">ничего не отмечено — любой</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <select x-model="opdsNew.started" aria-label="Начата ли книга" class="bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500 max-w-full">
+                <option value="">Начата или нет — не важно</option>
+                <option value="yes">Начата</option>
+                <option value="no">Не начата</option>
+              </select>
+              <select x-model="opdsNew.on_x3" aria-label="Есть ли книга на X3" class="bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500 max-w-full">
+                <option value="">Есть на X3 или нет — не важно</option>
+                <option value="yes">Есть на X3</option>
+                <option value="no">Нет на X3</option>
+              </select>
+            </div>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <label class="flex items-center gap-2"><span>Добавлена за</span>
+                <input type="number" min="1" max="3650" step="1" x-model="opdsNew.added_days" placeholder="—" aria-label="Добавлена за сколько дней"
+                       class="w-20 bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500 placeholder-gray-600"><span>дней</span></label>
+              <label class="flex items-center gap-2"><span>Не больше</span>
+                <input type="number" min="1" max="1000" step="1" x-model="opdsNew.limit" placeholder="—" aria-label="Не больше скольких книг"
+                       class="w-20 bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500 placeholder-gray-600"><span>книг</span></label>
+              <label class="flex items-center gap-2"><span>Язык</span>
+                <input type="text" maxlength="16" x-model="opdsNew.language" placeholder="ru, en…" aria-label="Язык книги"
+                       class="w-20 bg-black text-white border border-gray-700 rounded px-2 py-1 outline-none focus:border-amber-500 placeholder-gray-600"></label>
+              <span class="text-gray-400 text-xs">пусто — без ограничения</span>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button @click="addOpdsSection()" class="px-3 py-1 rounded bg-amber-600 hover:bg-amber-500 text-black font-bold disabled:opacity-30">Добавить</button>
+              <button @click="opdsAddOpen = false" class="px-3 py-1 rounded border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white disabled:opacity-30">Отмена</button>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 pt-2">
+            <button @click="saveOpdsMenu()" :disabled="!opdsChanged()" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold disabled:opacity-30">Сохранить</button>
+            <button x-show="opdsChanged()" @click="applyOpdsMenu(opds)" class="px-3 py-2 rounded-lg border border-gray-700 hover:border-gray-500 disabled:opacity-30">Отменить правки</button>
+            <span x-show="opdsChanged()" class="text-amber-400 text-xs" role="status">Есть несохранённые изменения</span>
+            <button @click="resetOpdsMenu()" :disabled="opds?.default && !opdsChanged()"
+                    class="ml-auto px-3 py-2 rounded-lg border border-gray-700 hover:border-gray-500 text-gray-400 hover:text-white disabled:opacity-30">Вернуть по умолчанию</button>
+          </div>
+        </fieldset>
+      </section>
+    </section>
+
+    <section x-show="tab === 'recommendations'" x-cloak class="max-w-5xl mx-auto">
+      <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
+        <div>
+          <h2 class="text-2xl font-black text-white leading-tight">Что читать дальше</h2>
+          <div class="text-sm text-gray-400 mt-1">
+            <span x-show="recommendations.run">Подборка от <span x-text="fullDate(recommendations.run?.created_at)"></span></span>
+            <span x-show="!recommendations.run">Подборка еще не создана</span>
+            <span x-show="selectedRecommendationRunId" class="ml-2 text-gray-400">архив</span>
+            <span x-show="recommendations.stale" class="ml-2 text-amber-500">полка изменилась с последней подборки</span>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button
+            x-show="selectedRecommendationRunId"
+            @click="loadRecommendations(false, null)"
+            class="h-10 px-4 rounded-lg border border-gray-800 hover:border-gray-600 text-gray-400 hover:text-white text-xs font-bold uppercase tracking-wide"
+          >
+            Текущая
+          </button>
+          <button
+            @click="refreshRecommendations()"
+            :disabled="recommendationsLoading"
+            class="h-10 px-4 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black text-xs font-black uppercase tracking-wide"
+          >
+            <span x-show="!recommendationsLoading">Создать рекомендации с ИИ</span>
+            <span x-show="recommendationsLoading" class="animate-pulse">Думаю...</span>
+          </button>
+        </div>
+      </div>
+
+
+      <div x-show="recommendationsLoading && !recommendations.run" x-cloak class="py-24 text-center text-amber-500 font-mono text-sm animate-pulse">
+        AI анализирует полку и ищет кандидатов...
+      </div>
+
+      <div x-show="!recommendationsLoading && !recommendations.run" x-cloak class="py-24 text-center">
+        <div class="text-gray-400 font-bold">Нет готовой подборки.</div>
+        <div class="text-gray-400 text-xs mt-1">Нажми «Создать рекомендации с ИИ», когда захочешь получить подборку.</div>
+      </div>
+
+      <div x-show="recommendations.run" x-cloak class="space-y-10">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Из твоих планов</h3>
+            <span class="text-xs text-gray-400 font-mono" x-text="recommendations.planned.length + ' шт.'"></span>
+          </div>
+          <div x-show="recommendations.planned.length === 0" class="p-4 rounded-xl border border-gray-800 bg-black/30 text-sm text-gray-400">AI не нашел сильных кандидатов среди книг в планах.</div>
+          <div class="grid md:grid-cols-3 gap-4">
+            <template x-for="rec in recommendations.planned" :key="rec.id">
+              <div @click="openRecommendationDetail(rec)" class="group cursor-pointer rounded-xl border border-gray-800 bg-[#101010] hover:border-amber-500/50 p-4 flex gap-4 transition-colors">
+                <img :src="recCoverSrc(rec)" @error="onImgError($event)" class="w-16 h-24 object-cover rounded bg-gray-900 shrink-0">
+                <div class="min-w-0 flex flex-col flex-1">
+                  <div class="text-white group-hover:text-amber-500 font-bold text-sm clamp-2 transition-colors" x-text="displayTitle(rec)" :title="originalTitle(rec)"></div>
+                  <div class="text-gray-400 text-xs clamp-1 mt-1" x-text="rec.authors"></div>
+                  <div class="text-gray-400 text-xs leading-relaxed mt-3 flex-1" x-text="rec.reason || 'Подходит по текущей полке.'"></div>
+                  <div x-show="!rec.available" class="mt-3 text-xs text-gray-400" x-text="recommendationState(rec)"></div>
+                  <div x-show="canResumeRecommendation(rec)" class="flex flex-wrap gap-2 mt-3">
+                    <button @click.stop="changeRecommendedStatus(rec, 'plan')" class="px-3 py-2 rounded-lg border border-amber-700 text-amber-500 text-xs font-bold">В планы</button>
+                    <button @click.stop="changeRecommendedStatus(rec, 'resume')" class="px-3 py-2 rounded-lg bg-amber-600 text-black text-xs font-bold" x-text="rec.book_status === 'read' ? 'Читать снова' : 'Продолжить'"></button>
+                  </div>
+                  <div class="flex gap-2 mt-4">
+                    <button @click.stop="startReadingPlanned(rec)" :disabled="!rec.available" class="disabled:opacity-40 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-xs font-bold">Читать</button>
+                    <button @click.stop="dismissRecommendation(rec)" class="px-3 py-2 rounded-lg border border-gray-800 hover:border-gray-600 text-gray-400 hover:text-white text-xs font-bold">Скрыть</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">Новые кандидаты из OpenLibrary</h3>
+            <span class="text-xs text-gray-400 font-mono" x-text="recommendations.external.length + ' шт.'"></span>
+          </div>
+          <div x-show="recommendations.external.length === 0" class="p-4 rounded-xl border border-gray-800 bg-black/30 text-sm text-gray-400">Новые кандидаты не найдены или OpenLibrary не ответил.</div>
+          <div class="grid md:grid-cols-2 gap-4">
+            <template x-for="rec in recommendations.external" :key="rec.id">
+              <div @click="openRecommendationDetail(rec)" class="group cursor-pointer rounded-xl border border-gray-800 bg-[#101010] hover:border-amber-500/50 p-4 flex gap-4 transition-colors">
+                <img :src="recCoverSrc(rec)" @error="onImgError($event)" class="w-16 h-24 object-cover rounded bg-gray-900 shrink-0">
+                <div class="min-w-0 flex flex-col flex-1">
+                  <div class="text-white group-hover:text-amber-500 font-bold text-sm clamp-2 transition-colors" x-text="displayTitle(rec)" :title="originalTitle(rec)"></div>
+                  <div class="text-gray-400 text-xs clamp-1 mt-1" x-text="rec.authors"></div>
+                  <div class="flex gap-2 mt-2 text-xs text-gray-400 uppercase font-bold">
+                    <span x-show="rec.year" x-text="rec.year"></span>
+                    <span x-show="rec.language" x-text="rec.language"></span>
+                    <span x-show="rec.search_query" class="truncate normal-case" x-text="'поиск: ' + rec.search_query"></span>
+                  </div>
+                  <div class="text-gray-400 text-xs leading-relaxed mt-3 flex-1" x-text="rec.reason || 'Похожий кандидат по вкусу полки.'"></div>
+                  <div x-show="!rec.available" class="mt-3 text-xs text-gray-400" x-text="recommendationState(rec)"></div>
+                  <div x-show="canResumeRecommendation(rec)" class="flex flex-wrap gap-2 mt-3">
+                    <button @click.stop="changeRecommendedStatus(rec, 'plan')" class="px-3 py-2 rounded-lg border border-amber-700 text-amber-500 text-xs font-bold">В планы</button>
+                    <button @click.stop="changeRecommendedStatus(rec, 'resume')" class="px-3 py-2 rounded-lg bg-amber-600 text-black text-xs font-bold" x-text="rec.book_status === 'read' ? 'Читать снова' : 'Продолжить'"></button>
+                  </div>
+                  <div class="flex gap-2 mt-4">
+                    <button @click.stop="addRecommended(rec)" :disabled="!rec.available" class="disabled:opacity-40 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-xs font-bold">В планы</button>
+                    <button @click.stop="dismissRecommendation(rec)" class="px-3 py-2 rounded-lg border border-gray-800 hover:border-gray-600 text-gray-400 hover:text-white text-xs font-bold">Скрыть</button>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+      <details x-show="recommendations.analysis" x-cloak class="mt-8 p-4 rounded-xl border border-gray-800 text-sm text-gray-300">
+        <summary class="font-bold">Как составлена подборка</summary>
+        <p class="pt-3 leading-relaxed" x-text="recommendations.analysis"></p>
+      </details>
+      <details x-show="recommendationHistory.length" x-cloak class="mt-8 rounded-xl border border-gray-800 bg-black/30 p-3">
+        <summary class="text-gray-300 font-bold py-2">История подборок</summary>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest">История AI</h3>
+          <button @click="loadRecommendationHistory()" class="text-xs text-gray-400 hover:text-amber-500 font-bold uppercase">Обновить</button>
+        </div>
+        <div class="flex gap-2 overflow-x-auto pb-1">
+          <template x-for="run in recommendationHistory" :key="run.id">
+            <button
+              @click="loadRecommendations(false, run.id)"
+              class="shrink-0 text-left px-3 py-2 rounded-lg border transition-colors min-w-[170px]"
+              :class="(recommendations.run?.id === run.id) ? 'border-amber-500 bg-amber-500 text-black' : 'border-gray-800 bg-gray-900/50 text-gray-400 hover:border-gray-600 hover:text-white'"
+            >
+              <div class="text-xs font-black" x-text="fullDate(run.created_at)"></div>
+              <div class="text-xs opacity-80 mt-1">
+                <span x-text="run.planned_count + ' из планов'"></span>
+                <span> · </span>
+                <span x-text="run.external_count + ' новых'"></span>
+              </div>
+            </button>
+          </template>
+        </div>
+      </details>
+
+    </section>
+
+  </main>
+
+  <div x-show="detailOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
+    <div class="absolute inset-0 bg-black/90 backdrop-blur-md" @click="closeDetail()"></div>
+    <div x-ref="bookDialog" role="dialog" aria-modal="true" aria-labelledby="book-title" tabindex="-1"
+         class="bh-book modal-panel relative bg-[#0f0f10] w-full max-w-4xl rounded-2xl border border-gray-800 shadow-2xl flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between gap-3 p-3 sm:p-4 border-b border-gray-800">
+        <span class="text-sm text-gray-400">Книга</span>
+        <details class="book-actions relative ml-auto">
+          <summary class="bh-button">Действия</summary>
+          <div class="flex flex-col gap-2 p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl max-h-[65dvh] overflow-y-auto">
+              <button
+                @click="refreshCover(detail)"
+                :disabled="coverRefreshing"
+                class="bh-button w-full"
+              >
+                <span x-show="!coverRefreshing">Обновить обложку</span>
+                <span x-show="coverRefreshing" class="animate-pulse">Загружаю…</span>
+              </button>
+              <button @click="editBook(detail)" class="bh-button w-full">
+                Редактировать
+              </button>
+              <button
+                x-show="!(detail?.source_id || '').startsWith('/works/')"
+                @click="catalogMatch()"
+                :disabled="catalogSearching"
+                class="bh-button w-full"
+                title="Поиск в Wikidata/OpenLibrary по текущему названию и автору"
+              >
+                <span x-show="!catalogSearching">Найти в каталоге</span>
+                <span x-show="catalogSearching" class="animate-pulse">Ищу…</span>
+              </button>
+              <button @click="mergeOpen = !mergeOpen; mergeTarget = ''" class="bh-button w-full">
+                Объединить с другой книгой…
+              </button>
+              <div x-show="mergeOpen" x-cloak class="flex flex-col gap-2 p-2 rounded-lg border border-gray-800 bg-black/40">
+                <select x-model="mergeTarget" class="bh-input">
+                  <option value="">Та же книга, что…</option>
+                  <template x-for="b in mergeCandidates()" :key="b.id">
+                    <option :value="b.id" x-text="displayTitle(b) + ' — ' + b.authors"></option>
+                  </template>
+                </select>
+                <button @click="mergeInto()" :disabled="!mergeTarget" class="bh-button">Объединить</button>
+              </div>
+              <button @click="deleteBook(detail.id)" class="bh-button bh-button-danger w-full">
+                Удалить книгу
+              </button>
+          </div>
+        </details>
+        <button @click="closeDetail()" class="bh-button" aria-label="Закрыть книгу">✕</button>
+      </div>
+      <div class="bh-book-body">
+        <div class="bh-book-header">
+          <img :src="coverSrc(detail)" alt="Обложка книги" @error="onImgError($event)" class="bh-book-cover">
+          <div class="bh-book-heading">
+            <h1 id="book-title" class="text-white break-words" x-text="displayTitle(detail)"></h1>
+            <p x-show="originalTitle(detail)" class="text-sm text-gray-400 mt-1" x-text="originalTitle(detail)"></p>
+            <p class="text-gray-300 mt-2" x-text="detail?.authors"></p>
+            <p class="text-sm text-gray-400 mt-1" x-text="[detail?.year, detail?.language].filter(Boolean).join(' · ')"></p>
+            <p x-show="detail?.deleted_before" class="flex items-center gap-2 text-sm text-gray-400 mt-2">
+              <span x-text="deletedBeforeText(detail?.deleted_before)"></span>
+              <button @click="forgetDeleted()" class="p-1 text-gray-400 hover:text-white" aria-label="Убрать заметку об удалении" title="Убрать заметку">✕</button>
+            </p>
+          </div>
+          <div class="bh-book-summary">
+            <div class="bh-indicators" aria-label="Файл и устройства">
+              <template x-for="indicator in bookIndicators(detail)" :key="indicator.key">
+                <span class="bh-chip" :data-state="indicator.state" :title="indicator.title" x-text="indicator.label"></span>
+              </template>
+            </div>
+            <div x-show="hasBookProgress(detail)" class="bh-progress">
+              <span x-text="'Прочитано ' + bookPercentText(detail)"></span>
+              <div class="bh-progress-track"><div class="bh-progress-fill" :style="`width:${bookPercent(detail)}%`"></div></div>
+            </div>
+            <div class="bh-status-editor">
+              <select x-model="detailStatus" aria-label="Статус чтения" class="bh-input min-w-0 flex-1">
+                 <option value="unsorted">Неразобранное</option>
+                 <option value="want">В планах</option>
+                 <option value="reading">В процессе</option>
+                 <option value="read">Прочитано</option>
+                 <option value="dropped">Бросил</option>
+              </select>
+              <button @click="saveDetailStatus()" class="bh-button bh-button-primary">
+                Сохранить
+              </button>
+              <div x-show="detailStatus === 'dropped'" x-cloak class="w-full flex flex-col gap-2 pt-3 border-t border-gray-800">
+                <div class="flex flex-wrap items-center gap-3">
+                  <span class="text-xs font-bold text-gray-400 uppercase">Почему:</span>
+                  <select x-model="detailDropReason" class="bh-input flex-1 min-w-0">
+                    <option value="">Причина не указана</option>
+                    <template x-for="r in dropReasons" :key="r.key">
+                      <option :value="r.key" x-text="r.label" :selected="r.key === detailDropReason"></option>
+                    </template>
+                  </select>
+                </div>
+                <input x-model="detailDropNote" maxlength="300" placeholder="Комментарий для рекомендаций (необязательно)"
+                       class="bh-input w-full">
+                <div class="text-xs text-gray-400">Рекомендации считают «не понравилось» только «Не зашла» и «Затянуто». «Выпал из чтения» — как понравившуюся.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <section class="bh-section" x-show="detail?.description" aria-label="Описание книги">
+          <div class="bh-section-heading">
+            <h2 class="bh-section-title">О книге</h2>
+            <button x-show="!detail?.description_ru" @click="translateDescription()" class="bh-button"
+                    :disabled="descriptionRequestId === detail?.id || detail?.description_translation_status === 'pending' || !reader.ai"
+                    :title="reader.ai ? 'Перевести описание через ИИ, сохранив оригинал' : 'ИИ не настроен'"
+                    x-text="detail?.description_translation_status === 'pending' || descriptionRequestId === detail?.id ? 'Перевожу…' : 'Перевести на русский'"></button>
+            <button x-show="detail?.description_ru" @click="descriptionOriginal = !descriptionOriginal" class="bh-button"
+                    x-text="descriptionOriginal ? 'Показать перевод' : 'Показать оригинал'"></button>
+          </div>
+          <p x-show="detail?.description_translation_status === 'error'" class="text-sm text-red-300 mb-3" role="status">Не удалось перевести описание. Можно повторить запрос.</p>
+          <p x-show="detail?.description_ru && !descriptionOriginal" class="text-xs text-gray-400 mb-3">Перевод ИИ</p>
+          <p class="bh-copy" x-text="!descriptionOriginal && detail?.description_ru ? detail.description_ru : detail?.description"></p>
+        </section>
+
+        <section class="bh-section" aria-label="Обзор книги">
+          <div class="bh-section-heading">
+            <h2 class="bh-section-title">Обзор</h2>
+            <button @click="regenSummaryFromDetail()" :disabled="summaryPolling || !reader.ai" :title="reader.ai ? 'Создание обзора по запросу' : 'ИИ не настроен'" class="bh-button">
+              <span x-show="!summaryPolling" x-text="detail?.summary ? 'Пересоздать обзор' : 'Создать обзор с ИИ'"></span>
+              <span x-show="summaryPolling" class="animate-pulse">Генерирую…</span>
+            </button>
+          </div>
+          <p x-show="summaryHint(detail)" class="text-sm mb-3" :class="detail?.summary_status === 'error' ? 'text-red-300' : 'text-gray-400'" x-text="summaryHint(detail)"></p>
+          <button x-show="detail?.summary && detail?.status === 'want' && !detailShow" @click="detailShow = true" class="bh-button mb-3">Показать обзор</button>
+          <div class="bh-copy" :class="(detail?.summary && detail?.status === 'want' && !detailShow) ? 'spoiler' : 'revealed'" @click="detailShow = true">
+            <span x-text="detail?.summary || 'Обзора пока нет. Его можно создать по кнопке выше.'"></span>
+          </div>
+        </section>
+
+        <section class="bh-section" aria-label="Файлы книги">
+          <h2 class="bh-section-title mb-3">Файл EPUB</h2>
+          <p x-show="!detail?.epubs?.length" class="text-sm text-gray-400 mb-3">В библиотеке пока только карточка. Добавь EPUB, чтобы скачать книгу или отправить её на устройство.</p>
+          <template x-for="file in visibleEpubs()" :key="file.sha256">
+            <div class="bh-surface mb-3 text-sm space-y-2">
+              <div class="flex flex-wrap gap-2">
+                <span class="text-gray-200 font-medium" x-text="file.canonical ? 'Основной EPUB' : 'Другая версия'"></span>
+                <span class="text-gray-400" x-text="epubOrigin(file)"></span>
+              </div>
+              <p class="text-gray-300 break-all" x-text="file.filename"></p>
+              <p class="text-gray-400" x-text="file.percentage == null ? 'Позиции чтения пока нет' : 'Прочитано: ' + fmtPct(file.percentage * 100)"></p>
+              <div class="flex flex-wrap gap-3 pt-2">
+                <a class="bh-button" :href="`/api/books/${detail?.id}/file/epub?sha256=${file.sha256}`">Скачать EPUB</a>
+                <button class="bh-button" x-show="reader.x3?.enabled" :disabled="readerBusy" @click="sendLibraryEpub(file)">Отправить на X3</button>
+                <details class="ml-auto">
+                  <summary class="bh-button">Ещё</summary>
+                  <button class="bh-button bh-button-danger block" x-show="file.xpath" :disabled="readerBusy" @click="resetLibraryPosition(file)">Начать чтение заново…</button>
+                  <p class="text-xs text-gray-400 break-all mt-2" x-text="'Версия: ' + file.sha256.slice(0, 12)"></p>
+                </details>
+              </div>
+            </div>
+          </template>
+          <div class="flex flex-wrap gap-2">
+          <button x-show="(detail?.epubs?.length || 0) > 1" @click="showOtherEpubs = !showOtherEpubs" class="bh-button"
+                  x-text="showOtherEpubs ? 'Скрыть другие версии' : 'Другие версии: ' + ((detail?.epubs?.length || 1) - 1)"></button>
+          <label class="bh-button file-action">
+            <span x-text="readerBusy ? 'Обрабатываю файл…' : (detail?.epubs?.length ? 'Добавить другую версию EPUB' : 'Добавить EPUB')"></span>
+            <input type="file" :disabled="readerBusy" accept=".epub,application/epub+zip" class="sr-only" @change="uploadLibraryEpub($event, detail?.id)">
+          </label>
+          </div>
+          <p x-show="(detail?.epubs?.length || 0) > 1" class="text-sm text-gray-400 mt-2">Прогресс каждой версии хранится отдельно. Для синхронизации используй один и тот же EPUB на устройствах.</p>
+        </section>
+        <details class="bh-section bh-accordion">
+          <summary class="bh-section-title">Устройства и синхронизация</summary>
+          <div class="pt-4 space-y-3 text-sm">
+            <div x-show="x3BookBadge(detail)" class="flex flex-wrap items-center justify-between gap-3">
+              <p :title="detail?.x3?.filename || ''"><span x-text="x3BookBadge(detail)?.label"></span><span class="block text-xs text-gray-400 mt-1" x-text="x3BookBadge(detail)?.title"></span></p>
+              <button x-show="detail?.x3?.state === 'present'" @click="removeFromX3()" :disabled="readerBusy" class="bh-button bh-button-danger">Убрать с X3…</button>
+            </div>
+            <p x-show="!bookDeviceNames(detail).length" class="text-gray-400">Устройства ещё не сообщали об этой книге.</p>
+            <template x-for="d in detail?.devices || []" :key="d.device_id + d.document">
+              <div class="break-words"><span class="text-white" x-text="(d.device || 'Читалка') + ' · ' + d.device_id"></span>
+                <p class="text-gray-400" x-text="'Последняя связь: ' + unixDate(d.received_at)"></p>
+              </div>
+            </template>
+            <p x-show="onKindle(detail).length" class="text-gray-300">Есть на Kindle по последним данным устройства.</p>
+            <button @click="navigate('devices')" class="bh-button">Все устройства</button>
+          </div>
+        </details>
+            <details class="bh-section bh-accordion" x-show="detail?.reader?.length" x-cloak>
+              <summary class="bh-section-title">Технические подробности Kindle</summary>
+              <div class="pt-4">
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-sm text-gray-400">
+                  Данные адаптера Kindle
+                </h3>
+                <span class="text-xs font-mono"
+                      :class="detailReaderLoading || detailReader.live ? 'text-gray-400' : 'text-amber-600'"
+                      x-text="detailReaderLoading ? 'загружаю…' : (detailReader.live ? 'актуальные данные' : (detailReader.items.length ? 'последние сохранённые данные' : ''))"></span>
+              </div>
+
+              <div x-show="!detailReaderLoading && !detailReader.items.length" class="p-4 bg-black/40 rounded-lg border border-gray-800/50 text-xs text-gray-400">
+                Для этой книги нет связанного файла Kindle.
+              </div>
+
+              <template x-for="it in detailReader.items" :key="it.key">
+                <div class="bh-surface mb-3 text-sm">
+                  <div class="flex justify-between gap-3">
+                    <div class="text-gray-300 font-bold break-all" x-text="it.filename || it.title"></div>
+                    <div class="text-gray-400 font-mono shrink-0" x-text="it.size ? (it.size / 1048576).toFixed(1) + ' МБ' : ''"></div>
+                  </div>
+
+                  <div class="bh-progress-track mt-3">
+                    <div class="bh-progress-fill" :style="`width:${readerPct(it)}%`"></div>
+                  </div>
+                  <div class="mt-1.5 text-gray-400">
+                    <span x-text="it.percentage == null ? 'позиции ещё нет' : '≈ ' + fmtPct(readerPct(it))"></span>
+                    <span x-show="it.pid != null" x-text="' · PID ' + it.pid"></span>
+                    <span x-show="it.source" x-text="' · ' + sourceLabel(it.source) + ' · ' + unixDate(it.updated_at)"></span>
+                  </div>
+                  <div x-show="it.pid != null && (it.context_before || it.context_after)" class="mt-2 text-gray-400 italic leading-relaxed">
+                    …<span x-text="(it.context_before || '').slice(-60)"></span><b class="text-amber-500 not-italic">▌</b><span x-text="(it.context_after || '').slice(0, 110)"></span>…
+                  </div>
+
+                  <div class="bh-indicators mt-3">
+                    <span class="bh-chip" :data-state="indicatorState(it.present ? 'ready' : 'missing')" x-text="'Kindle · ' + (it.present ? 'есть' : 'удалена с Kindle')"></span>
+                    <span class="bh-chip" :data-state="indicatorState(it.has_kfx ? 'ready' : 'missing')" x-text="'KFX на сервере · ' + (it.has_kfx ? 'есть' : 'нет')"></span>
+                    <span class="bh-chip" :data-state="indicatorState(it.map_status)" x-text="'Карта · ' + statusText(it.map_status)"></span>
+                    <span class="bh-chip" :data-state="indicatorState(it.epub_status)" x-text="'EPUB · ' + statusText(it.epub_status)"></span>
+                    <span x-show="it.has_epub" class="bh-chip" :data-state="indicatorState(it.bridge_status)" x-text="'Перевод позиции · ' + statusText(it.bridge_status)"></span>
+                    <span x-show="x3BookBadge(detail)" class="bh-chip" :data-state="x3BookBadge(detail)?.state" :title="x3BookBadge(detail)?.title" x-text="'На X3 · ' + (detail?.x3?.state === 'present' ? 'есть' : 'нет')"></span>
+                  </div>
+                  <div x-show="it.x3?.error" class="mt-2 text-amber-500/80 break-words" x-text="'X3: ' + (it.x3?.error || '')"></div>
+                  <div x-show="it.map_error || it.epub_error" class="mt-2 text-red-400 break-words" x-text="it.map_error || it.epub_error"></div>
+
+                  <div x-show="it.documents?.length" class="mt-3 space-y-1">
+                    <template x-for="d in it.documents" :key="d.document">
+                      <div class="text-gray-400">
+                        <span class="text-gray-400 font-bold">Последняя позиция от читалки</span>
+                        <span x-text="' · ' + unixDate(d.received_at)"></span>
+                        <span x-show="d.percentage != null" x-text="' · ≈ ' + fmtPct(d.percentage * 100)"></span>
+                        <span x-show="d.error" class="text-red-400" x-text="' · ' + d.error"></span>
+                      </div>
+                    </template>
+                  </div>
+
+                  <div class="flex flex-wrap gap-2 mt-4">
+                    <button @click="uploadEpub(it.key)" :disabled="readerBusy" class="bh-button" x-text="'Связать EPUB с Kindle…'"></button>
+                    <button x-show="it.has_kfx && !it.has_epub" @click="generateEpub(it.key)" :disabled="readerBusy || it.epub_status === 'generating'"
+                            class="bh-button"
+                            :title="'Собрать EPUB из файла Kindle — если оригинальный EPUB искать лень. Книги с DRM не соберутся.'"
+                            x-text="it.epub_status === 'generating' ? 'Собирается EPUB…' : 'Собрать EPUB из KFX'"></button>
+                    <a x-show="it.has_kfx" :href="`/api/reader/${it.key}/file/kfx`" class="bh-button">Скачать KFX</a>
+                    <button x-show="it.has_kfx" @click="readerAction(it.key, 'rebuild')" :disabled="readerBusy" class="bh-button">Перестроить карту</button>
+                    <button x-show="it.pid != null || it.percentage != null" @click="readerAction(it.key, 'reset')" :disabled="readerBusy" class="bh-button bh-button-danger">Сбросить позицию Kindle…</button>
+                  </div>
+                </div>
+              </template>
+
+              <div x-show="detailReader.items.length && detailReader.unbound_documents.length" class="p-4 bg-amber-900/10 rounded-lg border border-amber-500/30 text-xs">
+                <div class="text-amber-500 font-bold mb-2">Читалка прислала позицию для неизвестной книги</div>
+                <template x-for="d in detailReader.unbound_documents" :key="d.document">
+                  <div class="flex flex-wrap items-center gap-2 mt-2">
+                    <span class="text-gray-400" x-text="(d.device || 'Читалка') + ' · ' + unixDate(d.received_at) + (d.percentage != null ? ' · ≈ ' + (d.percentage * 100).toFixed(1) + '%' : '')"></span>
+                    <template x-for="it in detailReader.items" :key="it.key">
+                      <button @click="bindDocument(d.document, it.key)" :disabled="readerBusy" class="bh-button"
+                              x-text="detailReader.items.length > 1 ? 'Это ' + (it.filename || it.key) : 'Это эта книга'"></button>
+                    </template>
+                    <button @click="forgetDocument(d.document)" :disabled="readerBusy" class="bh-button">Убрать</button>
+                  </div>
+                </template>
+              </div>
+              </div>
+            </details>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="addOpen" x-cloak class="fixed inset-0 z-[70] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/90" @click="closeAdd()"></div>
+    <div x-ref="addDialog" role="dialog" aria-modal="true" aria-labelledby="add-title" tabindex="-1" class="modal-panel relative bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg p-6 overflow-y-auto">
+      <div class="flex items-center justify-between mb-6"><h2 id="add-title" class="text-xl text-white font-bold">Добавить книгу</h2><button @click="closeAdd()" aria-label="Закрыть добавление" class="px-3 py-2">✕</button></div>
+      <label class="block cursor-pointer p-4 border border-amber-600 rounded-xl">
+        <span class="block font-bold text-amber-400" x-text="readerBusy ? 'Загружаю EPUB…' : 'Загрузить EPUB'"></span>
+        <span class="block text-sm text-gray-300 mt-2">Файл сохранится в библиотеке. Книга откроется сразу после загрузки.</span>
+        <input type="file" :disabled="readerBusy" accept=".epub,application/epub+zip" class="mt-4 text-sm w-full" @change="uploadLibraryEpub($event)">
+      </label>
+      <button @click="closeAdd(); navigate('search')" class="block w-full text-left mt-4 p-4 border border-gray-700 rounded-xl">
+        <span class="block text-white font-bold">Найти в каталоге</span>
+        <span class="block text-sm text-gray-300 mt-2">Добавить в планы карточку без файла. EPUB можно прикрепить позже.</span>
+      </button>
+    </div>
+  </div>
+
+  <div x-show="recommendationDetailOpen" x-cloak  class="fixed inset-0 z-[55] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/90 backdrop-blur-md" @click="recommendationDetailOpen = false"></div>
+
+    <div x-ref="recommendationDialog" role="dialog" aria-modal="true" aria-label="Рекомендация книги" tabindex="-1" class="modal-panel relative bg-[#0f0f10] w-full max-w-3xl rounded-2xl border border-gray-800 shadow-2xl flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-900/50 select-none">
+        <div class="text-xs font-mono text-gray-400 uppercase tracking-widest flex items-center gap-2">
+          <span x-text="recommendationDetail?.kind === 'planned' ? 'Из твоих планов' : 'Книга из каталога · без файла'"></span>
+        </div>
+        <button
+          @click="recommendationDetailOpen = false"
+          class="w-8 h-8 rounded-full bg-gray-800/50 hover:bg-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <div class="overflow-y-auto p-6 md:p-8">
+        <div class="flex flex-col md:flex-row gap-8">
+          <div class="flex-shrink-0 flex flex-col gap-4 mx-auto md:mx-0 w-[180px]">
+            <img :src="recCoverSrc(recommendationDetail)" @error="onImgError($event)" class="w-full aspect-[2/3] object-cover rounded-lg shadow-xl shadow-black border border-gray-800">
+
+            <div class="flex flex-col gap-2">
+              <button
+                x-show="recommendationDetail?.kind === 'planned'"
+                @click="startReadingPlanned(recommendationDetail)"
+                :disabled="!recommendationDetail?.available"
+                class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-black text-xs font-black rounded-lg transition-colors disabled:opacity-40"
+              >
+                ЧИТАТЬ
+              </button>
+              <button
+                x-show="recommendationDetail?.kind === 'external'"
+                @click="addRecommended(recommendationDetail)"
+                :disabled="!recommendationDetail?.available"
+                class="w-full py-2.5 bg-amber-600 hover:bg-amber-500 text-black text-xs font-black rounded-lg transition-colors disabled:opacity-40"
+              >
+                В ПЛАНЫ
+              </button>
+              <div x-show="!recommendationDetail?.available" class="text-xs text-gray-400" x-text="recommendationState(recommendationDetail)"></div>
+              <div x-show="canResumeRecommendation(recommendationDetail)" class="flex flex-col gap-2">
+                <button @click="changeRecommendedStatus(recommendationDetail, 'plan')" class="py-2 rounded-lg border border-amber-700 text-amber-500 text-xs font-bold">В планы</button>
+                <button @click="changeRecommendedStatus(recommendationDetail, 'resume')" class="py-2 rounded-lg bg-amber-600 text-black text-xs font-bold" x-text="recommendationDetail?.book_status === 'read' ? 'Читать снова' : 'Продолжить'"></button>
+              </div>
+              <button
+                @click="dismissRecommendation(recommendationDetail)"
+                class="w-full py-2.5 bg-black hover:bg-red-900/20 text-red-500 hover:text-red-400 text-xs font-bold rounded-lg border border-gray-800 hover:border-red-900 transition-colors"
+              >
+                СКРЫТЬ
+              </button>
+            </div>
+          </div>
+
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap gap-2 mb-4 text-xs text-gray-400 uppercase font-bold tracking-wider">
+              <span class="px-2 py-1 rounded border" :class="recommendationDetail?.kind === 'planned' ? 'bg-amber-500 text-black border-amber-500' : 'bg-gray-900 border-gray-800 text-amber-500'" x-text="recommendationDetail?.kind === 'planned' ? 'Из планов' : 'Новый кандидат'"></span>
+              <span class="px-2 py-1 bg-gray-900 rounded border border-gray-800" x-show="recommendationDetail?.year" x-text="recommendationDetail?.year"></span>
+              <span class="px-2 py-1 bg-gray-900 rounded border border-gray-800" x-show="recommendationDetail?.language" x-text="recommendationDetail?.language"></span>
+            </div>
+
+            <h2 class="text-2xl md:text-3xl font-black text-white leading-tight" x-text="displayTitle(recommendationDetail)"></h2>
+            <div x-show="originalTitle(recommendationDetail)" class="text-sm text-gray-400 mt-1" x-text="originalTitle(recommendationDetail)"></div>
+            <div class="text-lg text-amber-500 mt-1 font-medium" x-text="recommendationDetail?.authors"></div>
+
+            <div class="mt-8">
+              <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Почему это здесь</h3>
+              <div class="text-sm text-gray-300 leading-relaxed p-4 bg-black/40 rounded-lg border border-gray-800/50 whitespace-pre-line shadow-inner" x-text="recommendationDetail?.reason || 'AI выбрал это как подходящий следующий вариант по текущей полке.'"></div>
+            </div>
+
+            <div class="mt-6" x-show="recommendationDetail?.search_query">
+              <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Поисковый след</h3>
+              <div class="text-xs text-gray-400 leading-relaxed p-3 bg-gray-900/30 rounded-lg border border-gray-800" x-text="recommendationDetail?.search_query"></div>
+            </div>
+
+            <div class="mt-6" x-show="recommendationDetail?.source_id">
+              <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Источник</h3>
+              <div class="text-xs font-mono text-gray-400 break-all p-3 bg-gray-900/30 rounded-lg border border-gray-800" x-text="recommendationDetail?.source_id"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit modal: Escape to close, no click.away to prevent accidental loss -->
+  <div x-show="editing" x-cloak  class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
+    <div x-ref="editDialog" role="dialog" aria-modal="true" aria-label="Редактирование книги" tabindex="-1" class="modal-panel bg-gray-900 w-full max-w-2xl rounded-2xl border border-gray-700 p-6 shadow-2xl overflow-y-auto">
+      <h3 class="text-xl font-bold text-white mb-6">Редактирование</h3>
+
+      <div class="space-y-4">
+        <div>
+          <label class="text-xs text-gray-400 font-bold uppercase">Название</label>
+          <input type="text" x-model="form.title" class="w-full bg-black border border-gray-700 p-3 rounded-lg text-sm text-white focus:border-amber-500 outline-none">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 font-bold uppercase">Русское название</label>
+          <input type="text" x-model="form.title_ru" maxlength="300" placeholder="Пусто — показывать название выше"
+                 class="w-full bg-black border border-gray-700 p-3 rounded-lg text-sm text-white focus:border-amber-500 outline-none placeholder-gray-600">
+          <div class="text-xs text-gray-400 mt-1" x-show="form.title_ru_source && form.title_ru_source !== 'manual'"
+               x-text="{ ai: 'Подобрала модель', kindle: 'Взято из файла на Kindle', none: 'Модель не нашла русского издания' }[form.title_ru_source] + ' — поправь, если не так.'"></div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 font-bold uppercase">Авторы</label>
+          <input type="text" x-model="form.authors" class="w-full bg-black border border-gray-700 p-3 rounded-lg text-sm text-white focus:border-amber-500 outline-none">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+           <div>
+             <label class="text-xs text-gray-400 font-bold uppercase">Год</label>
+             <input type="number" x-model="form.year" class="w-full bg-black border border-gray-700 p-3 rounded-lg text-sm text-white focus:border-amber-500 outline-none">
+           </div>
+           <div>
+             <label class="text-xs text-gray-400 font-bold uppercase">Язык</label>
+             <input type="text" x-model="form.language" class="w-full bg-black border border-gray-700 p-3 rounded-lg text-sm text-white focus:border-amber-500 outline-none">
+           </div>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 font-bold uppercase">Оригинальное описание</label>
+          <textarea x-model="form.description" rows="4" class="w-full bg-black border border-gray-700 p-3 rounded-lg text-sm text-gray-300 focus:border-amber-500 outline-none placeholder-gray-700" placeholder="Можно стереть или исправить..."></textarea>
+        </div>
+
+        <div>
+          <label class="text-xs text-gray-400 font-bold uppercase">AI Обзор</label>
+          <textarea x-model="form.summary" rows="3" class="w-full bg-black border border-gray-700 p-3 rounded-lg text-sm text-white focus:border-amber-500 outline-none"></textarea>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 mt-8">
+        <button @click="confirmCloseEdit()" class="px-4 py-2 rounded-lg text-sm font-bold text-gray-400 hover:text-white transition-colors">Отмена</button>
+        <button @click="saveBook()" class="px-6 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-sm font-bold transition-colors">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="fixed bottom-4 right-4 z-[70] flex flex-col gap-2 w-[min(92vw,22rem)]" x-cloak>
+    <template x-for="t in toasts" :key="t.id">
+      <div
+        @click="dismissToast(t.id)"
+        class="cursor-pointer px-4 py-3 rounded-xl border text-sm shadow-2xl backdrop-blur-md transition-all"
+        :class="{
+          'bg-red-950/90 border-red-800 text-red-200': t.kind === 'error',
+          'bg-green-950/90 border-green-800 text-green-200': t.kind === 'success',
+          'bg-gray-900/90 border-gray-700 text-gray-200': t.kind === 'info'
+        }"
+        x-text="t.message"
+      ></div>
+    </template>
+  </div>
+
+  <script>
+    function app() {
+      return {
+        tab: 'library',
+        loading: false,
+        navigation: [
+          {key:'library', label:'Полка'}, {key:'search', label:'Каталог'},
+          {key:'recommendations', label:'Рекомендации'}, {key:'devices', label:'Устройства'},
+        ],
+        addOpen: false,
+        mobileFilters: false,
+        showOtherEpubs: false,
+        libraryLoading: false,
+        libraryLoaded: false,
+        libraryError: '',
+        devices: {kindle:[], readers:[]},
+        devicesLoading: false,
+        devicesError: '',
+        attentionOpen: false,
+        _restoringRoute: false,
+        _pendingBook: null,
+        _libraryLoad: null,
+        _initialized: false,
+
+        navigate(tab) {
+          if (!this.navigation.some(item => item.key === tab)) return;
+          this.closeDetail(false);
+          this._pendingBook = null;
+          this.tab = tab;
+          this.writeRoute(true);
+          this.loadTab();
+        },
+
+        loadTab() {
+          if (this.tab === 'devices') {
+            this.loadDevices();
+            this.loadOpdsMenu();
+            if (this.reader.x3?.enabled) this.loadX3Device();
+          }
+          if (this.tab === 'recommendations') this.loadRecommendations();
+        },
+
+        savedView() {
+          return {tab:this.tab, shelf:this.shelf, file:this.fileFilter, q:this.libraryQuery};
+        },
+
+        applyView(view) {
+          if (this.navigation.some(t => t.key === view.tab)) this.tab = view.tab;
+          if (this.shelfTabs.some(t => t.key === view.shelf)) this.shelf = view.shelf;
+          if (this.fileFilters.some(t => t.key === view.file)) this.fileFilter = view.file;
+          if (typeof view.q === 'string') this.libraryQuery = view.q;
+        },
+
+        writeRoute(push = false) {
+          if (typeof window === 'undefined' || this._restoringRoute) return;
+          const view = this.savedView();
+          try { window.localStorage.setItem('bookhub.view', JSON.stringify(view)); } catch (_) {}
+          const params = new URLSearchParams(view);
+          const book = this.detailOpen && this.detail ? this.detail.id : this._pendingBook;
+          if (book) params.set('book', String(book));
+          const hash = '#' + params.toString();
+          if (window.location.hash !== hash) {
+            // card: запись истории создана открытием карточки — закрытие вернётся по ней назад.
+            const card = !!book && (push || !!window.history.state?.card);
+            window.history[push ? 'pushState' : 'replaceState']({bookhub:true, card}, '', hash);
+          }
+        },
+
+        async readRoute() {
+          if (typeof window === 'undefined') return;
+          this._restoringRoute = true;
+          let gone = false;
+          try {
+            const params = new URLSearchParams(window.location.hash.slice(1));
+            this.applyView(Object.fromEntries(params));
+            const id = Number(params.get('book'));
+            const book = id > 0 ? this.library.find(b => b.id === id) : null;
+            // Полка ещё не загрузилась — помним книгу из ссылки и откроем её после первой загрузки.
+            this._pendingBook = id > 0 && !book && !this.libraryLoaded ? id : null;
+            if (book) {
+              if (!this.detailOpen || this.detail?.id !== id) this.openDetail(book, false);
+            } else if (!this._pendingBook) {
+              this.closeDetail(false);
+              if (id > 0) this.toast('Книга по этой ссылке не найдена');
+            }
+            gone = id > 0 && !book && !this._pendingBook;
+          } finally { this._restoringRoute = false; }
+          // Запись истории с исчезнувшей книгой иначе осталась бы тупиком для «Назад».
+          if (gone) this.writeRoute();
+          this.loadTab();
+        },
+
+        /** «Назад» и «Вперёд» браузера: диалоги поверх карточки не переживают её запись истории. */
+        async onPopState() {
+          // Обход истории отменить нельзя: форму с несохранёнными правками оставляем на экране.
+          if (!this.editChanged()) this.editing = false;
+          this.addOpen = this.recommendationDetailOpen = false;
+          await this.readRoute();
+        },
+
+        focusDialog(ref) {
+          if (typeof document === 'undefined') return;
+          this.$nextTick?.(() => this.$refs[ref]?.focus());
+        },
+
+        showAdd() {
+          this.addOpen = true;
+          this.focusDialog('addDialog');
+        },
+        closeAdd() { this.addOpen = false; },
+
+        handleModalKey(event) {
+          if (typeof document === 'undefined') return;
+          const modal = this.addOpen ? this.$refs.addDialog : this.editing ? this.$refs.editDialog
+            : this.recommendationDetailOpen ? this.$refs.recommendationDialog : this.detailOpen ? this.$refs.bookDialog : null;
+          if (!modal) return;
+          if (event.key === 'Escape') {
+            event.preventDefault(); event.stopPropagation();
+            if (this.addOpen) this.closeAdd();
+            else if (this.editing) this.confirmCloseEdit();
+            else if (this.recommendationDetailOpen) this.recommendationDetailOpen = false;
+            else this.closeDetail();
+          }
+          if (event.key === 'Tab') {
+            const controls = [...modal.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex="0"]')]
+              .filter(el => el.getClientRects().length);
+            const first = controls[0], last = controls.at(-1);
+            if (!first) { event.preventDefault(); modal.focus(); return; }
+            if (event.shiftKey && (document.activeElement === first || document.activeElement === modal || !modal.contains(document.activeElement))) {
+              event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+              event.preventDefault(); first.focus();
+            }
+          }
+        },
+
+        attentionCount() {
+          return (this.reader.unbound_documents || []).length + (this.reader.incoming || []).length;
+        },
+
+        async loadDevices() {
+          if (this.devicesLoading) return;
+          this.devicesLoading = true;
+          try {
+            this.devices = await this.api('/api/devices');
+            this.devicesError = '';
+          } catch(e) { this.devicesError = 'Не удалось загрузить устройства: ' + e.message; }
+          finally { this.devicesLoading = false; }
+        },
+
+        deviceCards() {
+          const devices = new Map();
+          for (const d of this.devices.kindle || []) {
+            devices.set('kindle:' + d.id, {key:'kindle:' + d.id, name:'Kindle', id:d.id, seen:d.last_seen, note:'Книг по последним данным: ' + (d.books_count || 0)});
+          }
+          for (const d of this.devices.readers || []) {
+            const key = 'reader:' + d.device_id;
+            const previous = devices.get(key);
+            if (!previous || d.received_at > previous.seen) {
+              devices.set(key, {key, name:d.device || 'Читалка', id:d.device_id, seen:d.received_at, note:'Синхронизация EPUB'});
+            }
+          }
+          return [...devices.values()].sort((a,b) => (b.seen || 0) - (a.seen || 0));
+        },
+
+        bookDeviceNames(book) {
+          const names = (book?.devices || []).map(d => d.x3 ? 'X3' : d.device || 'Читалка');
+          if (this.onKindle(book).length) names.unshift('Kindle');
+          if (book?.x3) names.push('X3');
+          return [...new Set(names)];
+        },
+
+        indicatorState(status) {
+          if (['ready', 'mapped', 'done', 'sent'].includes(status)) return 'ready';
+          if (status === 'error') return 'error';
+          if (['queued', 'running', 'pending', 'generating', 'unresolved', 'ambiguous'].includes(status)) return 'pending';
+          return 'unknown';
+        },
+
+        bookIndicators(book) {
+          if (!book) return [];
+          const indicators = [];
+          if (book.reader?.length) {
+            const present = this.onKindle(book).length > 0;
+            indicators.push({key:'kindle', label:present ? 'Kindle: есть' : 'Kindle: удалена', state:present ? 'ready' : 'unknown',
+              title:present ? 'Файл есть на Kindle по последним данным устройства.' : 'По последним данным файл удалён с Kindle. Книга на сервере сохранена.'});
+          }
+          const x3 = this.x3BookBadge(book);
+          if (x3) indicators.push({key:'x3', ...x3});
+          // Наблюдения самой X3 (она называет себя CrossPoint) уже учтены в book.x3.
+          for (const name of [...new Set((book.devices || []).filter(d => !d.x3).map(d => d.device || 'Читалка'))]) {
+            if (name.toLowerCase() !== 'kindle') {
+              indicators.push({key:'device:' + name, label:name + ': был синк', state:'unknown', title:'Устройство сообщало позицию этой книги. Текущее наличие файла не проверено.'});
+            }
+          }
+          indicators.push({key:'epub', label:book.epubs?.length ? 'EPUB: есть' : 'EPUB: нет файла', state:book.epubs?.length ? 'ready' : 'unknown',
+            title:book.epubs?.length ? 'EPUB сохранён в библиотеке.' : 'Сохранена карточка книги, EPUB ещё не добавлен.'});
+          return indicators;
+        },
+
+        coverIndicators(book) {
+          return this.bookIndicators(book).map(indicator => {
+            const name = indicator.key === 'epub' ? 'EPUB' : indicator.label.split(':')[0];
+            const suffix = indicator.state === 'ready' ? '' : indicator.label.endsWith('был синк') ? ' ↔' : ' −';
+            return {...indicator, shortLabel:name + suffix};
+          });
+        },
+
+        hasBookProgress(book) {
+          return (book?.epubs || []).some(f => f.canonical && f.percentage != null)
+            || (book?.reader || []).some(r => r.percentage != null);
+        },
+
+        /** Наличие на X3 считает сервер (book.x3); без свидетельств индикатора нет. */
+        x3BookBadge(book) {
+          const x3 = book?.x3;
+          if (x3?.state === 'present') {
+            const last = [x3.sent_at, x3.synced_at].filter(Boolean).sort((a, b) => new Date(a) - new Date(b)).at(-1);
+            return {label:'X3: есть', state:'ready', title:x3.confirmed
+              ? 'Файл найден на X3 при проверке ' + this.fullDateTime(x3.checked_at)
+              : `Отправлено или синхронизировано ${this.fullDate(last)}; с тех пор X3 не проверялась`};
+          }
+          if (x3?.state === 'missing') {
+            return {label:'X3: нет', state:'pending', title:`При проверке ${this.fullDateTime(x3.checked_at)} файла на X3 не оказалось`};
+          }
+          return null;
+        },
+
+        visibleEpubs() {
+          const files = this.detail?.epubs || [];
+          return this.showOtherEpubs ? files : files.filter(f => f.canonical);
+        },
+
+        epubOrigin(file) {
+          return {upload:'Загружен вручную', kindle:'Из библиотеки Kindle', bookbot:'Из bookbot', generated:'Создан из Kindle'}[file.origin] || 'Сохранён в библиотеке';
+        },
+
+        // всплывашки вместо alert(), чтобы ошибки не блокировали интерфейс
+        toasts: [],
+        _toastId: 0,
+
+        // add/search
+        query: '',
+        results: [],
+        aiSearching: false,
+        _olResults: [],
+        _aiHits: [],
+        _aiPending: false,
+        _aiUsed: false,
+        _searchSeq: 0,
+        _aiSearchTimer: null,
+        selected: null,
+        addStatus: 'want',
+
+        // library
+        library: [],
+        shelf: 'reading',
+        libraryQuery: '',
+
+        // recommendations
+        recommendations: { run: null, stale: true, pending: false, last_error: null, planned: [], external: [], analysis: '', refresh_days: 3 },
+        recommendationsLoading: false,
+        recommendationHistory: [],
+        selectedRecommendationRunId: null,
+        recommendationDetailOpen: false,
+        recommendationDetail: null,
+        _recoTimer: null,
+        _recoErrorShown: false,
+
+        // detail modal
+        detailOpen: false,
+        detail: null,
+        detailShow: false,
+        descriptionOriginal: false,
+        descriptionRequestId: null,
+        _descriptionTimer: null,
+        _descriptionPollSeq: 0,
+        detailStatus: 'want',
+        detailDropReason: '',
+        detailDropNote: '',
+        summaryPolling: false,
+        _pollTimer: null,
+        coverRefreshing: false,
+
+        // edit
+        editing: false,
+        form: {},
+        _formSnapshot: '',
+
+        // читалки (reader-sync)
+        reader: { enabled: false, ok: false, error: null, synced_at: null, importing: { done: 0, total: 0 }, books: 0, epubs: 0 },
+        _readerSyncedAt: null,
+        fileFilter: 'all',
+        detailReader: { live: false, items: [], jobs: [], unbound_documents: [] },
+        detailReaderLoading: false,
+        readerBusy: false,
+        x3Checking: false,
+        x3Files: [],
+        x3Device: null,
+        x3FilesError: '',
+        x3FilesLoading: false,
+        // каталог OPDS: opds — ответ сервера, opdsDraft — меню, которое правится до «Сохранить»
+        opds: null,
+        opdsDraft: { page_size: 20, sections: [] },
+        opdsNew: { title: '', status: [], started: '', on_x3: '', added_days: '', limit: '', language: '' },
+        opdsAddOpen: false,
+        opdsLoading: false,
+        opdsBusy: false,
+        opdsError: '',
+        _opdsSnapshot: '',
+        _opdsSeq: 0,
+        _opdsKey: 0,
+        bindChoice: {},
+        incomingChoice: {},
+        catalogSearching: false,
+        mergeOpen: false,
+        mergeTarget: '',
+
+        fileFilters: [
+          { key: 'all', label: 'Любые' },
+          { key: 'epub', label: 'Есть EPUB' },
+          { key: 'no_epub', label: 'Без EPUB' },
+          { key: 'reader', label: 'Есть данные устройств' },
+          { key: 'none', label: 'Нет данных устройств' },
+        ],
+
+        // Ключи совпадают с DROP_REASONS в main.py.
+        dropReasons: [
+          { key: 'disliked', label: 'Не зашла — сюжет, стиль или идеи' },
+          { key: 'slow', label: 'Затянуто — не устроил темп' },
+          { key: 'lost_thread', label: 'Выпал из чтения — не вернулся, начинать заново не хочется' },
+          { key: 'mood', label: 'Не под настроение' },
+          { key: 'translation', label: 'Плохой перевод или издание' },
+        ],
+
+        // Ключи отдаёт сервер (/api/opds/menu → filters), здесь только слова.
+        opdsSortLabels: { read: 'по последнему чтению', added: 'по дате добавления', title: 'по названию', author: 'по автору', updated: 'по изменению карточки' },
+        opdsStatusLabels: { reading: 'Читаю', want: 'В планах', unsorted: 'Общее' },
+
+        shelfTabs: [
+          { key: 'all', label: 'Все' },
+          { key: 'unsorted', label: 'Неразобранное' },
+          { key: 'reading', label: 'В процессе' },
+          { key: 'want', label: 'В планах' },
+          { key: 'read', label: 'Прочитано' },
+          { key: 'dropped', label: 'Бросил' },
+        ],
+
+        // ---------- transport ----------
+
+        /**
+         * Единая точка запросов: молчаливых провалов быть не должно.
+         * Раньше половина вызовов игнорировала r.ok, и ошибка сервера
+         * выглядела как успешное сохранение.
+         */
+        async api(url, options = {}) {
+          const r = await fetch(url, options);
+          if (!r.ok) {
+            let detail = `HTTP ${r.status}`;
+            try {
+              const body = await r.json();
+              if (body && body.detail) {
+                detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+              }
+            } catch (_) { /* тело не JSON — оставляем код статуса */ }
+            // Код ответа нужен там, где у разных отказов разные слова (X3 не в сети / файла уже нет).
+            throw Object.assign(new Error(detail), { status: r.status });
+          }
+          if (r.status === 204) return null;
+          return r.json();
+        },
+
+        toast(message, kind = 'error') {
+          const id = ++this._toastId;
+          this.toasts.push({ id, message, kind });
+          setTimeout(() => {
+            this.toasts = this.toasts.filter(t => t.id !== id);
+          }, kind === 'error' ? 7000 : 3500);
+        },
+
+        dismissToast(id) {
+          this.toasts = this.toasts.filter(t => t.id !== id);
+        },
+
+        async patchBook(id, changes) {
+          return this.api(`/api/books/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(changes),
+          });
+        },
+
+        // ---------- covers ----------
+
+        placeholderCover() {
+          return "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='450' viewBox='0 0 300 450'%3E%3Crect width='300' height='450' fill='%23111'/%3E%3Ctext x='150' y='220' text-anchor='middle' font-family='sans-serif' font-size='14' fill='%239ca3af'%3EНет обложки%3C/text%3E%3C/svg%3E";
+        },
+
+        onImgError(event) {
+          const fallback = this.placeholderCover();
+          if (event.target.src !== fallback) event.target.src = fallback;
+        },
+
+        /** Версия по updated_at сбрасывает кеш браузера после перекачки обложки. */
+        coverSrc(book) {
+          if (!book || !book.cover_path) return this.placeholderCover();
+          const v = book.updated_at || '';
+          return v ? `${book.cover_path}?v=${encodeURIComponent(v)}` : book.cover_path;
+        },
+
+        recCoverSrc(rec) {
+          if (!rec || !rec.cover) return this.placeholderCover();
+          // Внешние кандидаты приходят прямой ссылкой на covers.openlibrary.org.
+          if (!rec.cover.startsWith('/static/')) return rec.cover;
+          const v = rec.cover_version || '';
+          return v ? `${rec.cover}?v=${encodeURIComponent(v)}` : rec.cover;
+        },
+
+        // ---------- presentation ----------
+
+        existingBookMessage(title, status) {
+          return `«${title}» уже в библиотеке — ${this.statusLabelShort(status)}`;
+        },
+
+        /** Заметка о ранее удалённой карточке (deleted_before): одни слова в открытой книге и после добавления. */
+        deletedBeforeText(note) {
+          if (!note) return '';
+          // Совпадение только по названию и автору — не обязательно та же книга (другой том, издание).
+          return (note.match === 'name' ? 'Книга с таким названием и автором уже удалялась ' : 'Эта книга уже удалялась ') + this.fullDate(note.deleted_at);
+        },
+
+        recommendationState(rec) {
+          if (!rec) return '';
+          if (rec.book_status) return 'Сейчас: ' + this.statusLabelShort(rec.book_status);
+          return rec.kind === 'planned' ? 'Книга удалена из библиотеки' : '';
+        },
+
+        canResumeRecommendation(rec) {
+          return !!this.selectedRecommendationRunId && !!rec?.book_id && ['read', 'dropped'].includes(rec.book_status);
+        },
+
+        statusLabelShort(s) {
+           const map = { unsorted: 'НЕ РАЗОБРАНО', want: 'В ПЛАНАХ', reading: 'ЧИТАЮ', read: 'ПРОЧИТАНО', dropped: 'БРОШЕНО' };
+           return map[s] || '???';
+        },
+
+        statusBadgeColor(s) {
+          if (s === 'read') return 'bg-green-500';
+          if (s === 'reading') return 'bg-amber-500';
+          if (s === 'want') return 'bg-gray-200';
+          if (s === 'dropped') return 'bg-red-500';
+          if (s === 'unsorted') return 'bg-sky-400';
+          return 'bg-gray-500';
+        },
+
+        // reader-sync отдаёт время в секундах Unix
+        unixDate(ts) {
+          if (!ts) return '—';
+          return new Date(ts * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        },
+
+        readerPct(item) {
+          return Math.max(0, Math.min(100, (item?.percentage || 0) * 100));
+        },
+
+        bookPercent(book) {
+          const epub = (book?.epubs || []).find(f => f.canonical);
+          if (epub?.percentage != null) return this.readerPct(epub);
+          return Math.max(0, ...(book?.reader || []).map(r => this.readerPct(r)));
+        },
+
+        bookPercentText(book) {
+          return this.fmtPct(this.bookPercent(book));
+        },
+
+        /** Один формат процента на всех экранах: 19.7%, 14%, 0.5%. */
+        fmtPct(p) {
+          const v = Math.round((Number(p) || 0) * 10) / 10;
+          return (Number.isInteger(v) ? v.toFixed(0) : v.toFixed(1)) + '%';
+        },
+
+        /** Файлы книги, которые сейчас лежат на Kindle (удалённые reader-sync помечает present=0). */
+        onKindle(book) {
+          return (book?.reader || []).filter(r => r.present);
+        },
+
+        sourceLabel(s) {
+          return { kindle: 'Kindle', x3: 'X3', reset: 'сброшено' }[s] || s || '—';
+        },
+
+        statusText(s) {
+          const map = { ready: 'готово', missing: 'нет', queued: 'в очереди', running: 'обработка', error: 'ошибка',
+                        mapped: 'сопоставлено', unresolved: 'нет совпадения', ambiguous: 'неоднозначно', pending: 'ожидание', reset: 'сброшено',
+                        generating: 'собирается из KFX' };
+          return map[s] || s || '—';
+        },
+
+        /** Живы ли процессы синка и обработчика (status.services); без этого поля судим по reader.ok. */
+        serviceHealth() {
+          const r = this.reader;
+          if (r.unreachable) return {ok:false, text:'Нет связи с сервером'};
+          const services = r.services || {sync:r.ok, worker:true};
+          const down = [!services.sync && 'Сервис синхронизации не отвечает', !services.worker && 'Фоновый обработчик не отвечает'].filter(Boolean);
+          // Процессы живы, но веб не прочитал данные читалок — зелёным это не показываем.
+          if (!down.length && !r.ok) down.push('Данные читалок недоступны' + (r.error ? ': ' + r.error : ''));
+          return {ok:!down.length, text:down.join(' · ') || 'Синхронизация работает'};
+        },
+
+        shortDate(d) {
+          if (!d) return '-';
+          try {
+            const dt = new Date(d);
+            if (isNaN(dt.getTime())) return '-';
+            return dt.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+          } catch { return '-'; }
+        },
+
+        fullDate(d) {
+          if (!d) return '-';
+          try {
+            const dt = new Date(d);
+            if (isNaN(dt.getTime())) return '-';
+            return dt.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          } catch { return '-'; }
+        },
+
+        /** Дата и время: 04.10.2026 12:00. */
+        fullDateTime(d) {
+          const day = this.fullDate(d);
+          return day === '-' ? day : day + ' ' + new Date(d).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        },
+
+        matchesFile(book, key) {
+          const observed = this.bookDeviceNames(book).length > 0;
+          if (key === 'reader') return observed;
+          if (key === 'epub') return (book.epubs || []).length > 0;
+          if (key === 'no_epub') return !(book.epubs || []).length;
+          if (key === 'none') return !observed;
+          return true;
+        },
+
+        countByShelf(key) {
+          const items = this.library.filter(b => this.matchesFile(b, this.fileFilter));
+          if (key === 'all') return items.length;
+          return items.filter(b => b.status === key).length;
+        },
+
+        countByFile(key) {
+          const items = this.shelf === 'all' ? this.library : this.library.filter(b => b.status === this.shelf);
+          return items.filter(b => this.matchesFile(b, key)).length;
+        },
+
+        filteredLibrary() {
+          const q = (this.libraryQuery || '').trim().toLowerCase();
+          let items = this.library;
+          if (this.shelf !== 'all') items = items.filter(b => b.status === this.shelf);
+          if (this.fileFilter !== 'all') items = items.filter(b => this.matchesFile(b, this.fileFilter));
+          if (q) {
+            items = items.filter(b => (b.title || '').toLowerCase().includes(q) || (b.title_ru || '').toLowerCase().includes(q)
+              || (b.authors || '').toLowerCase().includes(q));
+          }
+          return items;
+        },
+
+        summaryHint(book) {
+          if (!book) return '';
+          if (book.summary_status === 'pending') return 'AI пишет обзор...';
+          if (book.summary_status === 'error') return 'AI не справился — попробуй пересоздать';
+          return '';
+        },
+
+        // ---------- search / add ----------
+
+        async search() {
+          const q = (this.query || '').trim();
+          const seq = ++this._searchSeq;
+          clearTimeout(this._aiSearchTimer);
+          this.aiSearching = false;
+          this._olResults = []; this._aiHits = [];
+          this._aiPending = this._aiUsed = false;
+          if (q.length < 2) { this.results = []; return; }
+          // Модель помогает с любым запросом и идёт параллельно с OpenLibrary, а не после него.
+          // Короткая пауза сверх debounce — чтобы не дёргать её на каждое слово.
+
+          this.loading = true;
+          try {
+            const found = await this.api(`/api/search?q=${encodeURIComponent(q)}&limit=30`);
+            if (seq === this._searchSeq) { this._olResults = found; this.mergeResults(); }
+          } catch (e) {
+            if (seq === this._searchSeq) this.toast('Поиск в OpenLibrary не удался: ' + e.message);
+          } finally {
+            if (seq === this._searchSeq) { this.loading = false; this.reportEmptySearch(seq); }
+          }
+        },
+
+        /** Находки модели первыми (у них русские названия), дальше OpenLibrary без повторов. */
+        mergeResults() {
+          const ids = new Set(this._aiHits.map(h => h.source_id));
+          this.results = [...this._aiHits, ...this._olResults.filter(r => !ids.has(r.source_id))];
+        },
+
+        async translateTitles() {
+          try {
+            await this.api("/api/ai/translate-titles", {method:"POST"});
+            this.toast("Запрос на русские названия принят. Результат появится на полке.", "success");
+          } catch(e) { this.toast(e.message); }
+        },
+
+        async manualAiSearch() {
+          const q = this.query.trim();
+          if (q.length < 3 || this.aiSearching) return;
+          this._aiPending = this._aiUsed = true;
+          await this.aiSearch(q, this._searchSeq);
+        },
+
+        async aiSearch(q, seq) {
+          if (seq !== this._searchSeq) return;
+          this.aiSearching = true;
+          try {
+            const hits = await this.api(`/api/search/ai?q=${encodeURIComponent(q)}`);
+            if (seq === this._searchSeq) { this._aiHits = hits; this.mergeResults(); }
+          } catch (e) {
+            if (seq === this._searchSeq) this.toast('AI-поиск не удался: ' + e.message, 'info');
+          } finally {
+            if (seq === this._searchSeq) { this.aiSearching = false; this._aiPending = false; this.reportEmptySearch(seq); }
+          }
+        },
+
+        reportEmptySearch(seq) {
+          if (seq === this._searchSeq && this._aiUsed && !this.loading && !this._aiPending && !this.results.length) {
+            this.toast('Ни OpenLibrary, ни AI ничего не нашли', 'info');
+          }
+        },
+
+        selectResult(item) { this.selected = item; },
+
+        async quickAdd(item) {
+           this.selected = item;
+           this.addStatus = 'want';
+           await this.addSelected();
+        },
+
+        async addSelected() {
+          if (!this.selected) return;
+          this.loading = true;
+          const title = this.displayTitle(this.selected);
+          try {
+            const res = await this.api('/api/books', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ source_id: this.selected.source_id, status: this.addStatus, title: this.selected.title,
+                                     title_ru: this.selected.title_ru || null }),
+            });
+            this.selected = null; this.query = ''; this.results = [];
+            await this.loadLibrary();
+            this.tab = 'library';
+            this.shelf = res.status === 'exists' ? res.book_status : this.addStatus;
+            this.toast(res.status === 'exists' ? this.existingBookMessage(title, res.book_status) : `«${title}» добавлена`, res.status === 'exists' ? 'info' : 'success');
+            if (res.deleted_before) this.toast(this.deletedBeforeText(res.deleted_before), 'info');
+          } catch (e) {
+            this.toast('Не удалось добавить: ' + e.message);
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        async loadLibrary() {
+          if (this._libraryLoad) return this._libraryLoad;
+          this.libraryLoading = true;
+          this._libraryLoad = (async () => {
+            try {
+              this.library = await this.api('/api/books');
+              this.libraryLoaded = true;
+              this.libraryError = '';
+              const fresh = this.library.find(b => b.id === this.detail?.id);
+              if (this.detailOpen && fresh) this.detail = {...fresh};
+            } catch (e) {
+              this.libraryError = 'Не удалось загрузить библиотеку: ' + e.message;
+            } finally { this.libraryLoading = false; }
+            // Книга из ссылки ждала первой удачной загрузки полки.
+            if (this._pendingBook && this.libraryLoaded) { await this.readRoute(); this.writeRoute(); }
+          })();
+          try { await this._libraryLoad; } finally { this._libraryLoad = null; }
+        },
+
+        // ---------- recommendations ----------
+
+        async loadRecommendations(autoRefresh = false, runId = null) {
+          try {
+            const url = runId ? `/api/recommendations?run_id=${encodeURIComponent(runId)}` : '/api/recommendations';
+            const data = await this.api(url);
+            this.recommendations = data;
+            this.selectedRecommendationRunId = runId;
+            if (this.recommendationDetailOpen) {
+              const fresh = [...data.planned, ...data.external].find(r => r.id === this.recommendationDetail?.id);
+              this.recommendationDetail = fresh || null;
+              this.recommendationDetailOpen = !!fresh;
+            }
+
+            if (data.pending) {
+              // Генерация уже идёт (например, её запустил другой таб) — просто ждём.
+              this.recommendationsLoading = true;
+              this.startRecoPoll();
+              return;
+            }
+
+            this.recommendationsLoading = false;
+            if (data.last_error && !this._recoErrorShown) {
+              this._recoErrorShown = true;
+              this.toast('Прошлая генерация упала: ' + data.last_error);
+            }
+            // Recommendations are generated only by the explicit button.
+          } catch (e) {
+            this.toast('Не удалось загрузить подборку: ' + e.message);
+          }
+        },
+
+        async loadRecommendationHistory() {
+          try {
+            this.recommendationHistory = await this.api('/api/recommendations/history?limit=30');
+          } catch (e) {
+            console.error(e);
+          }
+        },
+
+        stopRecoPoll() {
+          if (this._recoTimer) { clearInterval(this._recoTimer); this._recoTimer = null; }
+        },
+
+        /** Подборка считается в фоне, поэтому дожидаемся её опросом. */
+        startRecoPoll() {
+          this.stopRecoPoll();
+          let attempts = 0;
+          const maxAttempts = 150; // 150 × 4s = 10 минут
+
+          this._recoTimer = setInterval(async () => {
+            attempts++;
+            let data;
+            try {
+              data = await this.api('/api/recommendations');
+            } catch (e) {
+              return; // сеть моргнула — попробуем на следующем тике
+            }
+
+            if (!data.pending) {
+              this.stopRecoPoll();
+              this.recommendations = data;
+              this.recommendationsLoading = false;
+              this.selectedRecommendationRunId = null;
+              if (data.last_error) {
+                this.toast('Не удалось собрать подборку: ' + data.last_error);
+              } else {
+                this.toast('Свежая подборка готова', 'success');
+              }
+              await this.loadRecommendationHistory();
+              return;
+            }
+
+            if (attempts >= maxAttempts) {
+              this.stopRecoPoll();
+              this.recommendationsLoading = false;
+              this.toast('Генерация затянулась — загляни сюда позже');
+            }
+          }, 4000);
+        },
+
+        async refreshRecommendations() {
+          if (this.recommendationsLoading) return;
+          this.recommendationsLoading = true;
+          this._recoErrorShown = false;
+          try {
+            this.recommendations = await this.api('/api/recommendations/refresh', { method: 'POST' });
+            this.selectedRecommendationRunId = null;
+            this.toast('AI пошёл думать — подборка появится сама', 'info');
+            this.startRecoPoll();
+          } catch (e) {
+            this.recommendationsLoading = false;
+            this.toast('Не удалось запустить генерацию: ' + e.message);
+          }
+        },
+
+        async dismissRecommendation(rec) {
+          if (!rec) return;
+          try {
+            await this.api(`/api/recommendations/${rec.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'dismissed' }),
+            });
+            if (this.recommendationDetail?.id === rec.id) {
+              this.recommendationDetailOpen = false;
+              this.recommendationDetail = null;
+            }
+            await this.loadRecommendations(false, this.selectedRecommendationRunId);
+          } catch (e) {
+            this.toast('Не удалось скрыть рекомендацию: ' + e.message);
+          }
+        },
+
+        async addRecommended(rec) {
+          if (!rec?.source_id) return;
+          try {
+            const res = await this.api('/api/books', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ source_id: rec.source_id, status: 'want', title: rec.title, title_ru: rec.title_ru || null }),
+            });
+            await this.loadLibrary();
+            await this.loadRecommendations(false, this.selectedRecommendationRunId);
+            const title = this.displayTitle(rec);
+            this.toast(res.status === 'exists' ? this.existingBookMessage(title, res.book_status) : `«${title}» в планах`, res.status === 'exists' ? 'info' : 'success');
+            if (res.deleted_before) this.toast(this.deletedBeforeText(res.deleted_before), 'info');
+          } catch (e) {
+            this.toast('Не удалось добавить кандидата: ' + e.message);
+          }
+        },
+
+        async changeRecommendedStatus(rec, action) {
+          if (!rec?.id) return;
+          try {
+            const result = await this.api(`/api/recommendations/${rec.id}/${action}`, { method: 'POST' });
+            await this.loadLibrary();
+            await this.loadRecommendations(false, this.selectedRecommendationRunId);
+            this.recommendationDetailOpen = false;
+            this.shelf = result.book_status;
+            this.tab = 'library';
+            this.toast(`«${rec.title}» — ${this.statusLabelShort(result.book_status)}`, 'success');
+          } catch (e) {
+            this.toast('Не удалось сменить статус: ' + e.message);
+            await this.loadRecommendations(false, this.selectedRecommendationRunId);
+          }
+        },
+
+        async startReadingPlanned(rec) {
+          if (!rec?.available) return;
+          await this.changeRecommendedStatus(rec, 'start');
+        },
+
+        openRecommendationDetail(rec) {
+          this.recommendationDetail = { ...rec };
+          this.recommendationDetailOpen = true;
+        },
+
+        // ---------- book detail ----------
+
+        openDetail(book, route = true) {
+          // Карточка поверх уже открытой (после объединения) занимает ту же запись истории.
+          const push = !this.detailOpen;
+          this.stopDescriptionPoll();
+          this.descriptionOriginal = false;
+          this.detail = { ...book };
+          this.detailOpen = true;
+          this.detailShow = (['read', 'reading'].includes(this.detail.status));
+          this.detailStatus = this.detail.status || 'want';
+          this.detailDropReason = this.detail.drop_reason || '';
+          this.detailDropNote = this.detail.drop_note || '';
+          this.stopSummaryPoll();
+          this.summaryPolling = false;
+          this.coverRefreshing = false;
+          this.mergeOpen = false;
+          this.mergeTarget = '';
+          this.showOtherEpubs = false;
+          this.detailReader = {live:false, items:[], jobs:[], unbound_documents:[]};
+          if (route) this.writeRoute(push);
+          this.focusDialog('bookDialog');
+
+          if (this.detail.summary_status === 'pending') {
+            this.startSummaryPoll(this.detail.id);
+          }
+          if (this.detail.description_translation_status === 'pending') this.startDescriptionPoll(this.detail.id);
+          this.loadDetailReader();
+        },
+
+        // ---------- читалки (reader-sync) ----------
+
+        /** reload — перечитать полку в любом случае: сервер только что сверил список файлов X3. */
+        async loadReaderStatus(reload = false) {
+          try {
+            const wasEnabled = this.reader.enabled;
+            const st = await this.api('/api/reader/status');
+            const importing = st.importing && st.importing.done < st.importing.total;
+            const changed = st.synced_at !== this._readerSyncedAt;
+            // Прогресс или статусы книг поменялись между полными синками — карточки тоже.
+            const cardsChanged = !!st.snapshots_at && this._snapshotsAt !== undefined && st.snapshots_at !== this._snapshotsAt;
+            this._snapshotsAt = st.snapshots_at || this._snapshotsAt || null;
+            this.reader = st;
+            this._readerSyncedAt = st.synced_at;
+            // Идёт импорт, прошёл свежий синк или сменилась ревизия (позиции, отправки, список файлов X3) — перечитываем полку.
+            const libraryChanged = this._libraryRevision !== st.library_revision;
+            this._libraryRevision = st.library_revision;
+            if (reload || importing || changed || cardsChanged || libraryChanged) await this.loadLibrary();
+            if (this.tab === 'devices') await this.loadDevices();
+            if (!wasEnabled && st.enabled && this.detailOpen) await this.loadDetailReader();
+          } catch (e) {
+            this.reader = { ...this.reader, ok: false, error: e.message, unreachable: true };
+          }
+        },
+
+        async syncReader() {
+          try {
+            await this.api('/api/reader/sync', { method: 'POST' });
+            this.toast('Синхронизация с читалками запущена', 'info');
+            setTimeout(() => this.loadReaderStatus(), 3000);
+          } catch (e) {
+            this.toast('Не удалось запустить синхронизацию: ' + e.message);
+          }
+        },
+
+        async loadDetailReader() {
+          if (!this.detail || !this.reader.enabled) return;
+          const id = this.detail.id;
+          this.detailReaderLoading = true;
+          try {
+            const data = await this.api(`/api/books/${id}/reader`);
+            if (this.detail?.id === id) this.detailReader = data;
+            // Страница книги берёт свежие данные — пусть и карточка на полке покажет то же самое.
+            if (data.live) await this.loadLibrary();
+          } catch (e) {
+            this.toast('Не удалось загрузить данные читалок: ' + e.message);
+          } finally {
+            this.detailReaderLoading = false;
+          }
+        },
+
+        uploadEpub(key) {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = '.epub';
+          input.onchange = async () => {
+            const file = input.files[0];
+            if (!file) return;
+            this.readerBusy = true;
+            this.toast('Загружаю ' + file.name + '…', 'info');
+            try {
+              await this.api(`/api/reader/${key}/epub`, { method: 'PUT', body: file });
+              this.toast('EPUB загружен — проверка и сопоставление идут в очереди', 'success');
+              await this.loadDetailReader();
+              await this.loadLibrary();
+            } catch (e) {
+              this.toast('EPUB не загрузился: ' + e.message);
+            } finally {
+              this.readerBusy = false;
+            }
+          };
+          input.click();
+        },
+
+        async readerAction(key, action) {
+          if (action === 'reset' && !confirm('Сбросить позицию? Следующая позиция с любой читалки будет принята, даже если она раньше текущей.')) return;
+          this.readerBusy = true;
+          try {
+            await this.api(`/api/reader/${key}/${action}`, { method: 'POST' });
+            this.toast(action === 'rebuild' ? 'Карта поставлена в очередь' : 'Позиция сброшена — отлистай на нужное место и закрой книгу', 'success');
+            await this.loadDetailReader();
+          } catch (e) {
+            this.toast('Не получилось: ' + e.message);
+          } finally {
+            this.readerBusy = false;
+          }
+        },
+
+        // ---------- X3 ----------
+        x3Queue() {
+          return this.reader.x3?.queue || [];
+        },
+
+        x3BookTitle(key) {
+          const book = this.library.find(b => `book:${b.id}` === key || (b.reader || []).some(r => r.key === key));
+          return book ? this.displayTitle(book) : key;
+        },
+
+        x3StateLine() {
+          const x = this.reader.x3 || {};
+          if (x.sending) return `X3 в сети — отправляю ${x.sending}`;
+          if (x.online) return `X3 в сети${x.version ? ' · ' + x.version : ''}`;
+          const when = x.checked_at ? ' · проверено ' + new Date(x.checked_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
+          return `X3 не в сети${when} · отправка только по кнопке`;
+        },
+
+        /** Что сервер сделал, пока был на связи с X3 (res.contact): забрал позиции чтения, удалил файлы удалённых книг. */
+        reportX3Contact(res) {
+          const contact = res?.contact || {};
+          // Убранное с устройства уходит и из списка «На X3 сейчас»: заново X3 не спрашиваем, у неё одно соединение.
+          const gone = [...(contact.removed || []), ...(res?.status === 'removed' ? res.files || [] : [])];
+          if (gone.length) this.x3Files = this.x3Files.filter(f => !gone.includes(f.name));
+          const said = [];
+          if (contact.positions > 0) said.push('С X3 прочитано позиций: ' + contact.positions);
+          if (contact.removed?.length) said.push('С X3 удалены файлы удалённых книг: ' + contact.removed.join(', '));
+          const message = said.join(' · ');
+          // Проверка, карточка устройства и список файлов идут подряд — одно и то же дважды не повторяем.
+          if (message && !this.toasts.some(t => t.message === message)) this.toast(message, 'info');
+        },
+
+        async checkX3() {
+          this.x3Checking = true;
+          try {
+            const x3 = await this.api('/api/x3/check', { method: 'POST' });
+            this.reader = { ...this.reader, x3 };
+            this.toast(x3.online ? 'X3 в сети — выбери книгу для отправки' : 'X3 не в сети — открой на нём передачу файлов',
+                       x3.online ? 'success' : 'info');
+            this.reportX3Contact(x3);
+
+            if (this.tab === 'devices') { this.loadX3Device(); if (x3.online) this.loadX3Files(); }
+          } catch (e) {
+            this.toast('Не удалось проверить X3: ' + e.message);
+          } finally {
+            this.x3Checking = false;
+          }
+        },
+
+        async loadX3Device() {
+          try {
+            this.x3Device = await this.api('/api/x3/device');
+            this.reportX3Contact(this.x3Device);
+            // X3 в сети — сервер заодно сверил список её файлов, наличие на карточках могло измениться.
+            await this.loadReaderStatus(!!this.x3Device.online);
+          } catch (e) {
+            this.toast('Не удалось получить данные X3: ' + e.message);
+          }
+        },
+
+        x3Signal(rssi) {
+          if (rssi == null || rssi === 0) return '';
+          return rssi >= -55 ? 'отличный' : rssi >= -67 ? 'хороший' : rssi >= -75 ? 'средний' : 'слабый';
+        },
+
+        x3Uptime(sec) {
+          if (sec == null) return '';
+          const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+          return h ? `${h} ч ${m} мин` : `${m} мин`;
+        },
+
+        /** «последняя» или «вышла 1.6.5 · 27.09»: у сборок-кандидатов версия вида 1.6.5-rc+0f01106. */
+        x3VersionNote(version, latest) {
+          if (!latest?.tag || !version) return '';
+          if (version === latest.tag || version.startsWith(latest.tag + '+')) return 'последняя';
+          return `вышла ${latest.tag} · ${this.shortDate(latest.published_at)}`;
+        },
+
+        x3DeviceFields() {
+          const d = this.x3Device || {};
+          const st = d.status || {};
+          const note = this.x3VersionNote(st.version, d.latest);
+          const listed = this.reader.x3?.listing_checked_at;
+          const fields = [
+            { label: 'Устройство', value: [st.device, st.serial].filter(Boolean).join(' · ') },
+            { label: 'Прошивка', value: st.version, note, link: note && note !== 'последняя' ? d.latest?.url : null },
+            { label: 'Wi-Fi', value: st.rssi ? `${st.rssi} dBm · ${this.x3Signal(st.rssi)}` : '—' },
+            { label: 'Свободная память', value: st.freeHeap ? Math.round(st.freeHeap / 1024) + ' КБ' : '—' },
+            { label: 'Работает', value: d.online ? this.x3Uptime(st.uptime) : '—' },
+            { label: 'Адрес', value: [st.ip, st.mode].filter(Boolean).join(' · ') },
+            { label: 'Книги на X3', value: d.books ? `${d.books.count} · ${(d.books.bytes / 1048576).toFixed(1)} МБ` : '—',
+              note: d.books ? 'свободное место прошивка не сообщает' : '' },
+            { label: 'Был в сети', value: d.online ? 'сейчас' : (d.last_online ? this.fullDate(d.last_online) : '—') },
+            { label: 'Синк позиции', value: d.last_sync ? this.unixDate(d.last_sync) : '—' },
+            { label: 'Список файлов проверен', value: listed ? this.fullDateTime(listed) : '—' },
+          ];
+          return fields.filter(f => f.value);
+        },
+
+        async loadX3Files() {
+          this.x3FilesLoading = true;
+          try {
+            const res = await this.api('/api/x3/files');
+            this.x3Files = res.files || [];
+            this.x3FilesError = this.x3Files.length ? '' : 'На X3 в папке ' + res.dir + ' пусто.';
+            this.reportX3Contact(res);
+            // Свежий список меняет «X3: есть/нет» на карточках и время проверки в статусе.
+            await this.loadReaderStatus(true);
+          } catch (e) {
+            this.x3Files = [];
+            this.x3FilesError = e.message;
+          } finally {
+            this.x3FilesLoading = false;
+          }
+        },
+
+        async sendToX3(key) {
+          this.readerBusy = true;
+          this.toast('Отправляю на X3…', 'info');
+          try {
+            const res = await this.api(`/api/reader/${key}/x3`, { method: 'POST' });
+            this.toast(`На X3: ${res.filename} — и сразу связан с книгой`, 'success');
+            this.reportX3Contact(res);
+            await this.loadDetailReader();
+            await this.loadReaderStatus();
+            await this.loadLibrary();
+            if (this.tab === 'devices') this.loadX3Files();
+          } catch (e) {
+            this.toast('Не получилось: ' + e.message);
+          } finally {
+            this.readerBusy = false;
+          }
+        },
+
+        async dequeueX3(key) {
+          try {
+            const x3 = await this.api(`/api/x3/queue/${key}`, { method: 'DELETE' });
+            this.reader = { ...this.reader, x3 };
+          } catch (e) {
+            this.toast('Не удалось убрать: ' + e.message);
+          }
+        },
+
+        /** Удалить файл открытой книги с самой X3; карточка и EPUB в библиотеке остаются. */
+        async removeFromX3() {
+          const book = this.detail;
+          if (!book || this.readerBusy || !confirm('Удалить файл этой книги с X3? На полке книга и EPUB останутся.')) return;
+          this.readerBusy = true;
+          try {
+            const res = await this.api(`/api/books/${book.id}/x3-remove`, { method: 'POST' });
+            this.toast('Убрано с X3', 'success');
+            this.reportX3Contact(res);
+            await this.loadLibrary();
+            await this.loadReaderStatus();
+          } catch (e) {
+            if (e.status === 503) this.toast('X3 не в сети — открой на ней передачу файлов', 'info');
+            else if (e.status === 409) {
+              this.toast('На X3 этого файла уже нет', 'info');
+              // «X3: есть» на карточке устарело — перечитываем полку.
+              await this.loadLibrary();
+            } else this.toast('Не получилось: ' + e.message);
+          } finally {
+            this.readerBusy = false;
+          }
+        },
+
+        async generateEpub(key) {
+          this.readerBusy = true;
+          try {
+            await this.api(`/api/reader/${key}/generate-epub`, { method: 'POST' });
+            this.toast('EPUB собирается из KFX — обычно до полуминуты. На X3 сам не уйдёт: потом «Отправить на X3».', 'info');
+            await this.loadDetailReader();
+            this.pollGeneratedEpub(key);
+          } catch (e) {
+            this.toast('Не получилось: ' + e.message);
+          } finally {
+            this.readerBusy = false;
+          }
+        },
+
+        /** Ждём, пока воркер соберёт и проверит EPUB: страница книги сама покажет результат. */
+        pollGeneratedEpub(key, attempt = 0) {
+          const bookId = this.detail?.id;
+          setTimeout(async () => {
+            if (this.detail?.id !== bookId) return;
+            await this.loadDetailReader();
+            const it = (this.detailReader.items || []).find(i => i.key === key);
+            if (!it) return;
+            if (it.epub_status === 'ready') { this.toast('EPUB собран — можно «Отправить на X3»', 'success'); await this.loadLibrary(); return; }
+            if (it.epub_status === 'error') { this.toast('EPUB не собрался: ' + (it.epub_error || 'ошибка')); return; }
+            if (attempt < 24) this.pollGeneratedEpub(key, attempt + 1);
+          }, 5000);
+        },
+
+        async forgetDocument(document) {
+          if (!confirm('Убрать этот запрос читалки? Позиция из него пропадёт; после новой синхронизации этого файла запрос может появиться снова.')) return;
+          this.readerBusy = true;
+          try {
+            await this.api(`/api/reader/documents/${encodeURIComponent(document)}`, { method: 'DELETE' });
+            this.toast('Запрос читалки убран', 'success');
+            await this.loadReaderStatus();
+            if (this.detail) await this.loadDetailReader();
+          } catch (e) {
+            this.toast('Не получилось: ' + e.message);
+          } finally {
+            this.readerBusy = false;
+          }
+        },
+
+        async bindDocument(document, key) {
+          this.readerBusy = true;
+          try {
+            const res = await this.api(`/api/reader/documents/${encodeURIComponent(document)}/bind`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(key.startsWith('book:') ? {book_id:Number(key.split(':')[1]),sha256:key.split(':')[2]} : {key}),
+            });
+            this.toast(res?.error || 'Документ читалки связан с книгой', res?.error ? 'error' : 'success');
+            await this.loadReaderStatus();
+            await this.loadLibrary();
+            if (this.detailOpen) await this.loadDetailReader();
+          } catch (e) {
+            this.toast('Не удалось связать: ' + e.message);
+          } finally {
+            this.readerBusy = false;
+          }
+        },
+
+        /** Файлы с читалок для привязки X3: сначала те, у кого уже есть EPUB (X3 читает именно его). */
+        bindTargets() {
+          const out = [];
+          for (const b of this.library) {
+            for (const f of (b.epubs || [])) {
+              out.push({key:`book:${b.id}:${f.sha256}`,epub:true,label:`${this.displayTitle(b)} — ${f.filename} · ${f.canonical ? 'основной' : f.sha256.slice(0,8)}`});
+            }
+            if (!(b.epubs || []).length) {
+              for (const r of (b.reader || [])) out.push({key:r.key,epub:!!r.has_epub,label:this.displayTitle(b)});
+            }
+          }
+          return out;
+        },
+
+        kindleBindTargets() {
+          return this.library.flatMap(b => (b.reader || []).map(r => ({
+            key:r.key, label:this.displayTitle(b) + ' — ' + (r.filename || r.key),
+          })));
+        },
+
+        async attachIncoming(id) {
+          const key = this.incomingChoice[id];
+          if (!key) return;
+          this.readerBusy = true;
+          try {
+            const res = await this.api(`/api/incoming/${id}/attach`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ key }),
+            });
+            if (res.errors?.length) this.toast('Не удалось связать EPUB с Kindle: ' + res.errors.join('; '));
+            else this.toast('EPUB связан с Kindle — проверка текста идёт в очереди', 'success');
+            await this.loadReaderStatus();
+            await this.loadLibrary();
+          } catch (e) {
+            this.toast('Не удалось прицепить: ' + e.message);
+          } finally {
+            this.readerBusy = false;
+          }
+        },
+
+        async deleteIncoming(inc) {
+          if (!confirm(`Убрать «${inc.filename}» из ожидания? Удалится только запись об ожидании связи с Kindle: EPUB останется в библиотеке, книга на Kindle — тоже.`)) return;
+          this.readerBusy = true;
+          try {
+            await this.api(`/api/incoming/${inc.id}`, { method: 'DELETE' });
+            await this.loadReaderStatus();
+          } catch (e) {
+            this.toast('Не удалось убрать: ' + e.message);
+          } finally {
+            this.readerBusy = false;
+          }
+        },
+
+        // ---------- каталог OPDS ----------
+
+        async loadOpdsMenu() {
+          if (this.opdsLoading) return;
+          this.opdsLoading = true;
+          const seq = this._opdsSeq;
+          try {
+            const menu = await this.api('/api/opds/menu');
+            // Пока шёл запрос, меню могли сохранить или сбросить: тот ответ новее, этот его не затирает.
+            // Вкладку открыли снова или нажали «Обновить»: несохранённые правки остаются, обновляются только числа книг.
+            if (seq === this._opdsSeq) this.applyOpdsMenu(menu, !this.opdsChanged());
+            this.opdsError = '';
+          } catch (e) { if (seq === this._opdsSeq) this.opdsError = 'Не удалось загрузить настройки каталога: ' + e.message; }
+          finally { this.opdsLoading = false; }
+        },
+
+        /** Ответ сервера становится состоянием блока; черновик пересоздаётся, если в нём нечего беречь. */
+        applyOpdsMenu(menu, reset = true) {
+          // Снимок считаем до присваиваний: ответ не по контракту не должен оставить блок обновлённым наполовину.
+          const snapshot = JSON.stringify(this.opdsPayload(menu));
+          if (reset) this.opdsDraft = { page_size: menu.page_size, sections: menu.sections.map(({ count, ...s }) => ({ ...s, key: s.id })) };
+          this.opds = menu;
+          this._opdsSnapshot = snapshot;
+          this._opdsSeq++;
+        },
+
+        /** Тело PUT /api/opds/menu. Раздел без id — новый, id ему даст сервер. */
+        opdsPayload(menu = this.opdsDraft) {
+          return { page_size: Number(menu.page_size), sections: menu.sections.map(s => ({
+            ...(s.id ? { id: s.id } : {}), title: (s.title || '').trim(), enabled: !!s.enabled,
+            filter: s.filter || {}, sort: s.sort, limit: s.limit ?? null,
+          })) };
+        },
+
+        opdsChanged() {
+          return !!this.opds && JSON.stringify(this.opdsPayload()) !== this._opdsSnapshot;
+        },
+
+        /** Адрес, который вводится в читалке: тот же сайт, с которого открыта полка. */
+        opdsUrl() {
+          return (typeof window === 'undefined' ? '' : window.location.origin) + (this.opds?.path || '/opds');
+        },
+
+        /** Книги считает сервер, поэтому у нового раздела число появится после сохранения. */
+        opdsCount(section) {
+          const saved = this.opds?.sections.find(s => s.id === section.id);
+          return saved ? 'книг: ' + saved.count : 'новый';
+        },
+
+        /** Что попадает в раздел: «Читаю, В планах · не начата · добавлена за 30 дн. · первые 30». */
+        opdsFilterText(section) {
+          const f = section.filter || {};
+          const said = [
+            (f.status || []).map(key => this.opdsStatusLabels[key] || key).join(', '),
+            f.started == null ? '' : (f.started ? 'начата' : 'не начата'),
+            f.on_x3 == null ? '' : (f.on_x3 ? 'есть на X3' : 'нет на X3'),
+            f.added_days ? `добавлена за ${f.added_days} дн.` : '',
+            f.language ? 'язык: ' + f.language : '',
+          ].filter(Boolean);
+          return (said.join(' · ') || 'все книги каталога') + (section.limit ? ` · первые ${section.limit}` : '');
+        },
+
+        moveOpdsSection(index, step) {
+          const list = this.opdsDraft.sections, to = index + step;
+          if (to < 0 || to >= list.length) return;
+          [list[index], list[to]] = [list[to], list[index]];
+        },
+
+        /** Встроенные разделы не удаляются, только выключаются. */
+        removeOpdsSection(index) {
+          if (!this.opdsDraft.sections[index]?.builtin) this.opdsDraft.sections.splice(index, 1);
+        },
+
+        addOpdsSection() {
+          const form = this.opdsNew, title = form.title.trim();
+          // Пустое поле — без ограничения, иначе целое число больше нуля.
+          const whole = value => value === '' || value == null ? null : (Number.isInteger(Number(value)) && Number(value) > 0 ? Number(value) : NaN);
+          const days = whole(form.added_days), limit = whole(form.limit);
+          if (!title) { this.toast('У раздела должно быть название'); return; }
+          if (Number.isNaN(days) || Number.isNaN(limit)) { this.toast('Дни и число книг — целые числа больше нуля'); return; }
+          // Те же границы, что проверит сервер: у готового раздела фильтр и предел уже не поправить.
+          if (title.length > 60) { this.toast('Название раздела — не длиннее 60 символов'); return; }
+          if (days > 3650) { this.toast('Добавлена за — не больше 3650 дней'); return; }
+          if (limit > 1000) { this.toast('Не больше — до 1000 книг'); return; }
+          if (this.opdsDraft.sections.length >= 30) { this.toast('В меню помещается не больше 30 разделов'); return; }
+          const filter = {};
+          const status = (this.opds?.filters?.status || []).filter(key => form.status.includes(key));
+          if (status.length) filter.status = status;
+          if (form.started) filter.started = form.started === 'yes';
+          if (form.on_x3) filter.on_x3 = form.on_x3 === 'yes';
+          if (days) filter.added_days = days;
+          const language = (form.language || '').trim();
+          if (language) filter.language = language;
+          this.opdsDraft.sections.push({ key: 'new:' + ++this._opdsKey, title, enabled: true, filter, sort: 'added', limit, builtin: false });
+          this.opdsNew = { title: '', status: [], started: '', on_x3: '', added_days: '', limit: '', language: '' };
+          this.opdsAddOpen = false;
+        },
+
+        async saveOpdsMenu() {
+          if (this.opdsBusy || !this.opdsChanged()) return;
+          const body = this.opdsPayload();
+          if (!Number.isInteger(body.page_size) || body.page_size < 5 || body.page_size > 60) { this.toast('Книг на странице — целое число от 5 до 60'); return; }
+          if (body.sections.some(s => !s.title)) { this.toast('У каждого раздела должно быть название'); return; }
+          this.opdsBusy = true;
+          try {
+            this.applyOpdsMenu(await this.api('/api/opds/menu', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            }));
+            this.opdsError = '';
+            this.toast('Меню каталога сохранено', 'success');
+          } catch (e) {
+            // Черновик не трогаем: правки не должны пропасть вместе с ошибкой. Отказ 400 — слова самого сервера.
+            this.toast(e.status === 400 ? e.message : 'Не удалось сохранить меню каталога: ' + e.message);
+          } finally {
+            this.opdsBusy = false;
+          }
+        },
+
+        async resetOpdsMenu() {
+          if (this.opdsBusy || !confirm('Вернуть меню каталога по умолчанию? Свои разделы, названия и порядок пропадут.')) return;
+          this.opdsBusy = true;
+          try {
+            this.applyOpdsMenu(await this.api('/api/opds/menu', { method: 'DELETE' }));
+            this.opdsError = '';
+            this.toast('Меню каталога возвращено по умолчанию', 'success');
+          } catch (e) {
+            this.toast('Не удалось вернуть меню по умолчанию: ' + e.message);
+          } finally {
+            this.opdsBusy = false;
+          }
+        },
+
+        mergeCandidates() {
+          if (!this.detail) return [];
+          return this.library
+            .filter(b => b.id !== this.detail.id)
+            .slice()
+            .sort((a, b) => this.displayTitle(a).localeCompare(this.displayTitle(b), 'ru'));
+        },
+
+        async mergeInto(targetId = null) {
+          const target = Number(targetId || this.mergeTarget);
+          if (!this.detail || !target) return;
+          const other = this.library.find(b => b.id === target);
+          if (!confirm(`«${this.displayTitle(this.detail)}» — это «${other ? this.displayTitle(other) : target}»?\n\nФайлы с читалок переедут туда. Если у той книги нет статуса, ссылки на каталог, описания, обзора или обложки — они возьмутся отсюда. Эта карточка удалится.`)) return;
+          try {
+            await this.api(`/api/books/${this.detail.id}/merge`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ target_id: target }),
+            });
+            await this.loadLibrary();
+            const fresh = this.library.find(b => b.id === target);
+            if (fresh) this.openDetail(fresh); else this.closeDetail();
+            this.toast('Объединено', 'success');
+          } catch (e) {
+            this.toast('Не удалось объединить: ' + e.message);
+          }
+        },
+
+        async catalogMatch() {
+          if (!this.detail || this.catalogSearching) return;
+          this.catalogSearching = true;
+          try {
+            const res = await this.api(`/api/books/${this.detail.id}/catalog-match`, { method: 'POST' });
+            if (res.status === 'duplicate') {
+              this.toast(`Это «${res.title}» — она уже на полке`, 'info');
+              await this.mergeInto(res.id);
+              return;
+            }
+            await this.loadLibrary();
+            const fresh = this.library.find(b => b.id === this.detail.id);
+            if (fresh) this.detail = { ...this.detail, ...fresh };
+            this.toast('Нашлась в каталоге (' + (res.via === 'wikidata' ? 'Wikidata' : 'перевод') + ')', 'success');
+          } catch (e) {
+            this.toast(e.message);
+          } finally {
+            this.catalogSearching = false;
+          }
+        },
+
+        closeDetail(route = true) {
+          const wasOpen = this.detailOpen;
+          this.detailOpen = false;
+          this.stopDescriptionPoll();
+          this.stopSummaryPoll();
+          this.summaryPolling = false;
+          if (!route || !wasOpen || typeof window === 'undefined') return;
+          // Карточку открыла своя запись истории — уходим по ней назад, иначе каждая закрытая
+          // книга оставляла дубль списка и «Назад» срабатывало вхолостую. Прямая ссылка — replace.
+          if (window.history.state?.card) window.history.back();
+          else this.writeRoute();
+        },
+
+        /** Русское название, если есть; title остаётся оригиналом — по нему полка ищет в каталогах. */
+        displayTitle(b) {
+          return (b?.title_ru || '').trim() || b?.title || '';
+        },
+
+        /** Оригинал для подписи под русским названием; пусто, если показывать нечего. */
+        originalTitle(b) {
+          const ru = (b?.title_ru || '').trim();
+          return ru && b?.title && ru.toLowerCase() !== b.title.toLowerCase() ? b.title : '';
+        },
+
+        dropReasonLabel(key) {
+          return this.dropReasons.find(r => r.key === key)?.label || 'Причина не указана';
+        },
+
+        async saveDetailStatus() {
+          if (!this.detail) return;
+          const body = { status: this.detailStatus };
+          // Причину шлём только вместе с «Бросил»: при других статусах она остаётся как была.
+          if (this.detailStatus === 'dropped') {
+            body.drop_reason = this.detailDropReason || null;
+            body.drop_note = (this.detailDropNote || '').trim() || null;
+          }
+          try {
+            await this.patchBook(this.detail.id, body);
+            Object.assign(this.detail, body);
+            await this.loadLibrary();
+            this.toast('Статус сохранён', 'success');
+          } catch (e) {
+            this.toast('Не удалось сохранить статус: ' + e.message);
+          }
+        },
+
+        async translateDescription() {
+          const book = this.detail;
+          if (!book?.description || book.description_ru || book.description_translation_status === 'pending'
+              || this.descriptionRequestId === book.id || !this.reader.ai) return;
+          this.descriptionRequestId = book.id;
+          try {
+            const result = await this.api(`/api/books/${book.id}/translate-description`, {method:'POST'});
+            if (this.detailOpen && this.detail?.id === book.id) {
+              this.detail.description_translation_status = result.status === 'ready' ? 'ready' : 'pending';
+              this.descriptionOriginal = false;
+              this.startDescriptionPoll(book.id);
+            }
+          } catch (e) {
+            this.toast('Не удалось запустить перевод: ' + e.message);
+          } finally {
+            if (this.descriptionRequestId === book.id) this.descriptionRequestId = null;
+          }
+        },
+
+        stopDescriptionPoll() {
+          clearTimeout(this._descriptionTimer);
+          this._descriptionTimer = null;
+          this._descriptionPollSeq++;
+        },
+
+        startDescriptionPoll(bookId) {
+          this.stopDescriptionPoll();
+          const seq = this._descriptionPollSeq;
+          let attempts = 0;
+          const active = () => seq === this._descriptionPollSeq && this.detailOpen && this.detail?.id === bookId;
+          const poll = async () => {
+            if (!active()) return;
+            attempts++;
+            try {
+              const updated = await this.api(`/api/books/${bookId}`);
+              if (!active()) return;
+              const idx = this.library.findIndex(b => b.id === bookId);
+              if (idx !== -1) this.library[idx] = updated;
+              // Do not overwrite an unsaved reading-status choice or review in another request.
+              for (const field of ['description', 'description_ru', 'description_translation_status']) this.detail[field] = updated[field];
+              if (updated.description_translation_status !== 'pending') return;
+            } catch (_) { /* A transient read failure must not launch another translation. */ }
+            if (!active()) return;
+            if (attempts >= 150) {
+              this.toast('Пока не удалось получить перевод. Открой книгу позже — запрос сохранён.', 'info');
+              return;
+            }
+            this._descriptionTimer = setTimeout(poll, 2000);
+          };
+          this._descriptionTimer = setTimeout(poll, 500);
+        },
+
+        // --- Summary polling ---
+        stopSummaryPoll() {
+          if (this._pollTimer) {
+            clearInterval(this._pollTimer);
+            this._pollTimer = null;
+          }
+        },
+
+        startSummaryPoll(bookId) {
+          this.stopSummaryPoll();
+          this.summaryPolling = true;
+          let attempts = 0;
+          const maxAttempts = 90; // 90 × 2s = 3 минуты: pro-модель бывает медленной
+
+          this._pollTimer = setInterval(async () => {
+            attempts++;
+            let updated;
+            try {
+              updated = await this.api(`/api/books/${bookId}`);
+            } catch (e) {
+              return;
+            }
+
+            // Точечно обновляем книгу в полке, не дёргая весь список.
+            const idx = this.library.findIndex(b => b.id === bookId);
+            if (idx !== -1) this.library[idx] = updated;
+
+            if (updated.summary_status !== 'pending') {
+              if (this.detail && this.detail.id === bookId) {
+                this.detail.summary = updated.summary;
+                this.detail.summary_status = updated.summary_status;
+                this.detail.updated_at = updated.updated_at;
+              }
+              this.summaryPolling = false;
+              this.stopSummaryPoll();
+              if (updated.summary_status === 'error') {
+                this.toast('AI не смог написать обзор — попробуй пересоздать');
+              }
+              return;
+            }
+
+            if (attempts >= maxAttempts) {
+              this.summaryPolling = false;
+              this.stopSummaryPoll();
+              this.toast('Обзор всё ещё пишется — открой книгу позже', 'info');
+            }
+          }, 2000);
+        },
+
+        async uploadLibraryEpub(event, bookId = null) {
+          const file = event.target.files[0]; if (!file) return;
+          if (this.readerBusy) return;
+          this.readerBusy = true;
+          try {
+            const url = bookId ? `/api/books/${bookId}/epub` : '/api/epubs';
+            const result = await this.api(`${url}?filename=${encodeURIComponent(file.name)}`, {method:bookId?'PUT':'POST',body:file});
+            await this.loadLibrary();
+            let fresh = this.library.find(b => b.id === result.book_id);
+            if (!fresh) fresh = await this.api(`/api/books/${result.book_id}`);
+            if (!bookId) {
+              this.closeAdd();
+              this.tab = 'library'; this.shelf = fresh.status || 'unsorted'; this.fileFilter = 'all'; this.libraryQuery = '';
+              this.writeRoute();
+              this.openDetail(fresh);
+            } else if (this.detail?.id === bookId) {
+              this.detail = {...fresh}; this.showOtherEpubs = true;
+            }
+            this.toast('EPUB сохранён в библиотеке', 'success');
+            if (result.deleted_before) this.toast(this.deletedBeforeText(result.deleted_before), 'info');
+          } catch(e) { this.toast('Не удалось добавить EPUB: '+e.message); }
+          finally { this.readerBusy=false; event.target.value=''; }
+        },
+        async sendLibraryEpub(file) {
+          if (!this.detail || this.readerBusy) return;
+          this.readerBusy=true;
+          try {
+            const result=await this.api(`/api/books/${this.detail.id}/send-x3?sha256=${file.sha256}`,{method:'POST'});
+            this.toast('На X3: '+result.filename,'success');
+            this.reportX3Contact(result);
+            await this.loadLibrary();
+            await this.loadReaderStatus();
+          } catch(e) { this.toast(e.message); }
+          finally { this.readerBusy=false; }
+        },
+        async resetLibraryPosition(file) {
+          if (!this.detail || !confirm(`Начать чтение «${file.filename}» заново? Позиция этой версии EPUB и связанных файлов Kindle будет сброшена. Сначала синхронизируй устройства.`)) return;
+          try {
+            await this.api(`/api/books/${this.detail.id}/reset-position?sha256=${file.sha256}`,{method:'POST'});
+            await this.loadLibrary();
+            this.detail=this.library.find(b=>b.id===this.detail.id);
+          } catch(e) { this.toast(e.message); }
+        },
+
+        async regenSummaryFromDetail() {
+           if (!this.detail || this.summaryPolling) return;
+           try {
+             await this.api(`/api/books/${this.detail.id}/regenerate-summary`, { method: 'POST' });
+             this.detail.summary_status = 'pending';
+             this.startSummaryPoll(this.detail.id);
+           } catch (e) {
+             this.toast('Не удалось запустить AI: ' + e.message);
+           }
+        },
+
+        async refreshCover(book) {
+          if (!book || this.coverRefreshing) return;
+          this.coverRefreshing = true;
+          try {
+            const data = await this.api(`/api/books/${book.id}/refresh-cover`, { method: 'POST' });
+            if (data.cover_path) {
+              this.detail.cover_path = data.cover_path;
+              this.detail.updated_at = data.cover_version || this.detail.updated_at;
+            }
+            await this.loadLibrary();
+            this.toast('Обложка обновлена', 'success');
+          } catch (e) {
+            this.toast('Обложка не обновилась: ' + e.message);
+          } finally {
+            this.coverRefreshing = false;
+          }
+        },
+
+        // ---------- edit ----------
+
+        editBook(book) {
+          this.form = { ...book };
+          this._formSnapshot = JSON.stringify(this.editPayload(this.form));
+          this.editing = true;
+        },
+
+        editChanged() {
+          return this.editing && !!this._formSnapshot && JSON.stringify(this.editPayload(this.form)) !== this._formSnapshot;
+        },
+
+        confirmCloseEdit() {
+          const changed = JSON.stringify(this.editPayload(this.form)) !== this._formSnapshot;
+          if (!changed || confirm('Есть несохранённые изменения. Закрыть?')) {
+            this.editing = false;
+          }
+        },
+
+        editPayload(f) {
+          return {
+            title: (f.title || '').trim(),
+            title_ru: (f.title_ru || '').trim(),
+            authors: (f.authors || '').trim(),
+            description: f.description ?? '',
+            summary: f.summary ?? '',
+            year: (f.year === '' || f.year === null || f.year === undefined) ? null : Number(f.year),
+            language: (f.language || '').trim() || null,
+          };
+        },
+
+        async saveBook() {
+          const f = this.form;
+          if (!f || !f.id) return;
+          // Пустой <input type="number"> отдаёт "", а это не число — шлём null.
+          const yearRaw = (f.year === '' || f.year === null || f.year === undefined) ? null : Number(f.year);
+          if (yearRaw !== null && !Number.isFinite(yearRaw)) {
+            this.toast('Год должен быть числом');
+            return;
+          }
+          const current = this.editPayload(f);
+          const original = JSON.parse(this._formSnapshot);
+          const payload = Object.fromEntries(Object.entries(current).filter(([key, value]) => value !== original[key]));
+          if (!Object.keys(payload).length) { this.editing = false; return; }
+          try {
+            await this.patchBook(f.id, payload);
+            this.editing = false;
+            await this.loadLibrary();
+            if (this.detail?.id === f.id) {
+              const fresh = this.library.find(b => b.id === f.id);
+              if (fresh) {
+                this.detail = { ...fresh };
+                this.detailStatus = this.detail.status;
+              }
+            }
+            this.toast('Сохранено', 'success');
+          } catch (e) {
+            // Модалку не закрываем: правки не должны пропасть вместе с ошибкой.
+            this.toast('Не удалось сохранить: ' + e.message);
+          }
+        },
+
+        async deleteBook(id) {
+          if (!confirm('Удалить книгу? Это навсегда.')) return;
+          try {
+             await this.api(`/api/books/${id}`, { method: 'DELETE' });
+             this.closeDetail();
+             await this.loadLibrary();
+             this.toast('Книга удалена', 'success');
+          } catch (e) {
+             this.toast('Не удалось удалить: ' + e.message);
+          }
+        },
+
+        /** ✕ на заметке «уже удалялась»: сервер забывает удалённую карточку, заметка пропадает. */
+        async forgetDeleted() {
+          const note = this.detail?.deleted_before;
+          if (!note) return;
+          try {
+            await this.api(`/api/deleted/${note.id}`, { method: 'DELETE' });
+            // detail — копия книги с полки, заметку снимаем в обеих.
+            for (const book of [this.detail, ...this.library]) {
+              if (book?.deleted_before?.id === note.id) book.deleted_before = null;
+            }
+          } catch (e) {
+            this.toast('Не удалось убрать заметку: ' + e.message);
+          }
+        },
+
+        async init() {
+          if (this._initialized) return;
+          this._initialized = true;
+          if (typeof window !== 'undefined') {
+            try { this.applyView(JSON.parse(window.localStorage.getItem('bookhub.view') || '{}')); } catch (_) {}
+            this.applyView(Object.fromEntries(new URLSearchParams(window.location.hash.slice(1))));
+            window.addEventListener('popstate', () => this.onPopState());
+          }
+          await this.loadLibrary();
+          await this.readRoute();
+          this.writeRoute();
+          for (const field of ['tab', 'shelf', 'fileFilter', 'libraryQuery']) this.$watch?.(field, () => this.writeRoute());
+          for (const [field, ref] of [['addOpen','addDialog'], ['detailOpen','bookDialog'], ['editing','editDialog'], ['recommendationDetailOpen','recommendationDialog']]) {
+            let previousFocus;
+            this.$watch?.(field, value => {
+              if (typeof document === 'undefined') return;
+              if (value) { previousFocus = document.activeElement; this.focusDialog(ref); }
+              else if (previousFocus?.isConnected) previousFocus.focus();
+            });
+          }
+          this.loadRecommendations();
+          this.loadRecommendationHistory();
+          this.loadReaderStatus();
+          setInterval(() => { if (typeof document === 'undefined' || !document.hidden) this.loadReaderStatus(); }, 10000);
+        }
+      }
+    }
+  </script>
+</body>
+</html>

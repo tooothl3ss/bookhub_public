@@ -1,0 +1,15 @@
+name: Tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --target tests -t bookhub-public:tests .
+      - run: docker run --rm --network none -v "$PWD:/src:ro" bookhub-public:tests
+      - run: docker build --target runtime -t bookhub-public:check .
+      - run: docker run --rm --network none -e PYTHONPATH=/app -v "$PWD/scripts/smoke.py:/smoke.py:ro" bookhub-public:check python /smoke.py

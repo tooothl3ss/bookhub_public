@@ -1,0 +1,5 @@
+{
+  "server": "http://192.168.1.10:8088",
+  "api_key": "COPY_SYNC_API_KEY_FROM_YOUR_ENV",
+  "device_id": "kindle-main"
+}

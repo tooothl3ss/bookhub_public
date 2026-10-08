@@ -1,0 +1,90 @@
+#!/bin/sh
+set -eu
+umask 077
+ROOT=${KINDLE_SYNC_HOME:-/mnt/us/kindle-sync}
+export KINDLE_SYNC_HOME="$ROOT"
+LUA=${KINDLE_SYNC_LUA:-$ROOT/bin/luajit}
+STATE="$ROOT/state/agent"
+mkdir -p "$STATE"
+call_client() { "$LUA" "$ROOT/client.lua" "$@"; }
+case "${1:-help}" in
+ start)
+   if [ -f "$STATE/service.pid" ] && kill -0 "$(cat "$STATE/service.pid")" 2>/dev/null; then
+     echo 'Already running'; exit 0
+   fi
+   call_client doctor --local
+   # Only remove empty stale locks when the daemon is not running.
+   rmdir "$STATE/local.lock" "$STATE/worker.lock" 2>/dev/null || true
+   nohup "$ROOT/bin/kindle-agent" run >>"$STATE/agent.log" 2>&1 </dev/null &
+   echo $! >"$STATE/service.pid"
+   echo "Started; log: $STATE/agent.log"
+   ;;
+ run)
+   call_client wake
+   FIFO="$STATE/events.fifo"
+   rm -f "$FIFO"
+   mkfifo "$FIFO"
+   lipc-wait-event -m com.lab126.powerd goingToScreenSaver,outOfScreenSaver,wakeupFromSuspend >"$FIFO" &
+   EVENT_PID=$!
+   (
+     CHILD=''
+     trap '[ -z "$CHILD" ] || kill "$CHILD" 2>/dev/null; exit 0' TERM INT HUP
+     event_client() {
+       "$LUA" "$ROOT/client.lua" "$@" & CHILD=$!
+       wait "$CHILD" || true
+       CHILD=''
+     }
+     while IFS= read -r event; do
+       case "$event" in
+         *goingToScreenSaver*) event_client sleep; event_client push ;;
+         *outOfScreenSaver*|*wakeupFromSuspend*) event_client wake ;;
+       esac
+     done <"$FIFO"
+   ) &
+   CAPTURE_PID=$!
+   (
+     CHILD=''
+     trap '[ -z "$CHILD" ] || kill "$CHILD" 2>/dev/null; exit 0' TERM INT HUP
+     while :; do
+       if [ ! -f "$STATE/suspended" ]; then
+         "$LUA" "$ROOT/client.lua" sync & CHILD=$!
+         wait "$CHILD" || true
+       fi
+       sleep 30 & CHILD=$!
+       wait "$CHILD" || true
+       CHILD=''
+     done
+   ) &
+   WORKER_PID=$!
+   cleanup() {
+     kill "$EVENT_PID" "$CAPTURE_PID" "$WORKER_PID" 2>/dev/null || true
+     wait "$EVENT_PID" "$CAPTURE_PID" "$WORKER_PID" 2>/dev/null || true
+     rm -f "$FIFO" "$STATE/service.pid"
+   }
+   trap 'exit 0' TERM INT HUP
+   trap cleanup EXIT
+   while kill -0 "$EVENT_PID" 2>/dev/null; do
+     if [ ! -f "$STATE/suspended" ]; then call_client observe || true; fi
+     sleep 2
+   done
+   echo 'Power event listener exited; restart service after checking lipc-wait-event'
+   exit 1
+   ;;
+ stop)
+   if [ -f "$STATE/service.pid" ]; then
+     PID=$(cat "$STATE/service.pid")
+     kill "$PID" 2>/dev/null || true
+     # busybox sleep на Kindle не понимает дробные секунды — ждём до 10 с по секунде.
+     COUNT=0
+     while kill -0 "$PID" 2>/dev/null && [ "$COUNT" -lt 10 ]; do
+       sleep 1
+       COUNT=$((COUNT + 1))
+     done
+   fi
+   ;;
+ status)
+   if [ -f "$STATE/service.pid" ] && kill -0 "$(cat "$STATE/service.pid")" 2>/dev/null; then echo running; else echo stopped; fi
+   if [ -f "$STATE/agent.log" ]; then tail -n 15 "$STATE/agent.log"; fi
+   ;;
+ *) call_client "$@" ;;
+esac

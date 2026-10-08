@@ -1,0 +1,712 @@
+#!/mnt/us/kindle-sync/bin/luajit
+-- kindle-pos: inspect and rewrite native Kindle KFX reading positions (.yjf)
+--
+-- Standalone: requires only /mnt/us/kindle-sync/bin/luajit and system sqlite3.
+-- It intentionally treats .yjf as the authoritative native-reader position.
+-- cc.db is read-only here; Kindle updates its mirrored percentage after native open.
+--
+-- KRDS codec/position handling is adapted from:
+--   https://github.com/kaikozlov/kindle.koplugin
+-- MIT License, Copyright (c) 2026 Kai Kozlov.
+--
+-- This utility is intentionally conservative:
+--   * every write requires KRDS byte-for-byte roundtrip before modification
+--   * every write resolves a PID through the book-specific map
+--   * writes are temp-file + rename
+--   * it never writes cc.db
+--
+-- Commands:
+--   kindle-pos list
+--   kindle-pos get <cdeKey>
+--   kindle-pos export <cdeKey>
+--   kindle-pos set-pid <cdeKey> <PID> [map.posmap]
+--   kindle-pos set-percent <cdeKey> <0..100> [map.posmap]
+-- Writes require a matching map. Backups are managed externally.
+
+local SIGNATURE = "\0\0\0\0\0\26\177\38"
+
+local TAG_BOOLEAN      = 0
+local TAG_INT          = 1
+local TAG_LONG         = 2
+local TAG_UTF          = 3
+local TAG_DOUBLE       = 4
+local TAG_SHORT        = 5
+local TAG_FLOAT        = 6
+local TAG_BYTE         = 7
+local TAG_CHAR         = 9
+local TAG_OBJECT_BEGIN = -2
+local TAG_OBJECT_END   = -1
+
+local MAP_DIR    = os.getenv("KINDLE_POS_MAP_DIR") or "/mnt/us/kindle-sync/maps"
+local CC_DB      = os.getenv("KINDLE_POS_CC_DB") or "/var/local/cc.db"
+local BOOK_ROOT  = os.getenv("KINDLE_POS_BOOK_ROOT") -- optional local copy of books
+
+local function die(msg, code)
+    io.stderr:write("ERROR: " .. tostring(msg) .. "\n")
+    os.exit(code or 1)
+end
+
+local function shquote(s)
+    s = tostring(s)
+    return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function sqlquote(s)
+    return "'" .. tostring(s):gsub("'", "''") .. "'"
+end
+
+local function read_file(path)
+    local f, err = io.open(path, "rb")
+    if not f then return nil, err end
+    local data = f:read("*a")
+    f:close()
+    return data
+end
+
+local function write_file(path, data)
+    local f, err = io.open(path, "wb")
+    if not f then return nil, err end
+    local ok, werr = f:write(data)
+    if not ok then f:close(); return nil, werr end
+    f:flush()
+    f:close()
+    return true
+end
+
+local function basename(path)
+    return path:match("([^/]+)$") or path
+end
+
+local function command_output(cmd)
+    local p = io.popen(cmd .. " 2>/dev/null")
+    if not p then return nil end
+    local out = p:read("*a")
+    p:close()
+    return out
+end
+
+local function signed(b)
+    if b >= 128 then return b - 256 end
+    return b
+end
+
+local function tag_byte(tag)
+    return string.char(tag < 0 and tag + 256 or tag)
+end
+
+local Cursor = {}
+Cursor.__index = Cursor
+
+function Cursor:new(data)
+    return setmetatable({data=data, offset=1}, self)
+end
+
+function Cursor:remaining()
+    return #self.data - self.offset + 1
+end
+
+function Cursor:read(n)
+    if self:remaining() < n then return nil, "truncated KRDS value" end
+    local chunk = self.data:sub(self.offset, self.offset+n-1)
+    self.offset = self.offset + n
+    return chunk
+end
+
+function Cursor:read_i8()
+    local c, e = self:read(1); if not c then return nil, e end
+    return signed(c:byte())
+end
+
+function Cursor:read_i16()
+    local c, e = self:read(2); if not c then return nil, e end
+    local a,b = c:byte(1,2)
+    return signed(a)*256+b
+end
+
+function Cursor:read_i32()
+    local c, e = self:read(4); if not c then return nil, e end
+    local a,b,d,e4 = c:byte(1,4)
+    return signed(a)*16777216+b*65536+d*256+e4
+end
+
+function Cursor:read_u32()
+    local c, e = self:read(4); if not c then return nil, e end
+    local a,b,d,e4 = c:byte(1,4)
+    return ((a*256+b)*256+d)*256+e4
+end
+
+function Cursor:read_i64()
+    local hi, e = self:read_i32(); if hi == nil then return nil, e end
+    local lo, e2 = self:read_u32(); if lo == nil then return nil, e2 end
+    return hi*4294967296+lo
+end
+
+function Cursor:read_utf_body()
+    local empty, e = self:read_i8(); if empty == nil then return nil, e end
+    if empty == 1 then return "", true end
+    if empty ~= 0 then return nil, "invalid KRDS UTF empty marker" end
+    local c, e2 = self:read(2); if not c then return nil, e2 end
+    local n = c:byte(1)*256+c:byte(2)
+    local s, e3 = self:read(n); if not s then return nil, e3 end
+    return s, false
+end
+
+local parse_value
+parse_value = function(cur)
+    local tag, e = cur:read_i8(); if tag == nil then return nil, e end
+    if tag == TAG_BOOLEAN then
+        local v, e2 = cur:read_i8(); if v == nil then return nil, e2 end
+        if v ~= 0 and v ~= 1 then return nil, "invalid KRDS boolean" end
+        return {tag=tag, value=v==1}
+    elseif tag == TAG_INT then
+        local v,e2=cur:read_i32(); if v==nil then return nil,e2 end
+        return {tag=tag,value=v}
+    elseif tag == TAG_LONG then
+        local v,e2=cur:read_i64(); if v==nil then return nil,e2 end
+        return {tag=tag,value=v}
+    elseif tag == TAG_UTF then
+        local v,empty=cur:read_utf_body(); if v==nil then return nil,empty end
+        return {tag=tag,value=v,empty=empty}
+    elseif tag == TAG_DOUBLE or tag == TAG_FLOAT then
+        local n = tag==TAG_DOUBLE and 8 or 4
+        local v,e2=cur:read(n); if not v then return nil,e2 end
+        return {tag=tag,value=v}
+    elseif tag == TAG_SHORT then
+        local v,e2=cur:read_i16(); if v==nil then return nil,e2 end
+        return {tag=tag,value=v}
+    elseif tag == TAG_BYTE then
+        local v,e2=cur:read_i8(); if v==nil then return nil,e2 end
+        return {tag=tag,value=v}
+    elseif tag == TAG_CHAR then
+        local v,e2=cur:read(1); if not v then return nil,e2 end
+        return {tag=tag,value=v}
+    elseif tag == TAG_OBJECT_BEGIN then
+        local name,e2=cur:read_utf_body(); if name==nil then return nil,e2 end
+        local vals={}
+        while true do
+            if cur:remaining() < 1 then return nil, "unterminated KRDS object" end
+            local nt = signed(cur.data:byte(cur.offset))
+            if nt == TAG_OBJECT_END then
+                cur.offset = cur.offset+1
+                break
+            end
+            local child,ce=parse_value(cur); if not child then return nil,ce end
+            vals[#vals+1]=child
+        end
+        return {tag=tag,value={name=name,values=vals}}
+    end
+    return nil, "unknown KRDS datatype " .. tostring(tag)
+end
+
+local function parse_store(data)
+    if data:sub(1,#SIGNATURE) ~= SIGNATURE then
+        return nil, "invalid KRDS signature"
+    end
+    local cur=Cursor:new(data)
+    cur.offset=#SIGNATURE+1
+    local first,e=parse_value(cur); if not first then return nil,e end
+    local count,e2=parse_value(cur); if not count then return nil,e2 end
+    if first.value ~= 1 or count.tag ~= TAG_INT or count.value < 0 then
+        return nil, "invalid KRDS header"
+    end
+    local vals={}
+    for _=1,count.value do
+        local v,ve=parse_value(cur); if not v then return nil,ve end
+        vals[#vals+1]=v
+    end
+    if cur:remaining() ~= 0 then return nil, "extra data after KRDS store" end
+    return {first=first,count=count,values=vals}
+end
+
+local function encode_utf(value, empty)
+    if empty and value=="" then return "\1" end
+    if #value > 65535 then return nil, "KRDS UTF too long" end
+    return "\0"..string.char(math.floor(#value/256),#value%256)..value
+end
+
+local function be_bytes(number,count)
+    local t={}
+    if number < 0 then number = number + 256^count end
+    for i=count-1,0,-1 do
+        local shift=256^i
+        t[#t+1]=string.char(math.floor(number/shift)%256)
+    end
+    return table.concat(t)
+end
+
+local encode_value
+encode_value = function(node)
+    local tag=node.tag
+    if tag==TAG_BOOLEAN then
+        return tag_byte(tag)..string.char(node.value and 1 or 0)
+    elseif tag==TAG_INT then
+        return tag_byte(tag)..be_bytes(node.value,4)
+    elseif tag==TAG_LONG then
+        local lo=node.value%4294967296
+        local hi=(node.value-lo)/4294967296
+        return tag_byte(tag)..be_bytes(hi,4)..be_bytes(lo,4)
+    elseif tag==TAG_UTF then
+        local b,e=encode_utf(node.value,node.empty); if not b then return nil,e end
+        return tag_byte(tag)..b
+    elseif tag==TAG_DOUBLE or tag==TAG_FLOAT then
+        return tag_byte(tag)..node.value
+    elseif tag==TAG_SHORT then
+        return tag_byte(tag)..be_bytes(node.value,2)
+    elseif tag==TAG_BYTE then
+        return tag_byte(tag)..string.char(node.value%256)
+    elseif tag==TAG_CHAR then
+        return tag_byte(tag)..node.value
+    elseif tag==TAG_OBJECT_BEGIN then
+        local b,e=encode_utf(node.value.name); if not b then return nil,e end
+        local out={tag_byte(tag),b}
+        for _,child in ipairs(node.value.values) do
+            local c,ce=encode_value(child); if not c then return nil,ce end
+            out[#out+1]=c
+        end
+        out[#out+1]=tag_byte(TAG_OBJECT_END)
+        return table.concat(out)
+    end
+    return nil, "unknown KRDS datatype "..tostring(tag)
+end
+
+local function encode_store(store)
+    if store.count.value ~= #store.values then return nil,"KRDS count mismatch" end
+    local out={SIGNATURE}
+    for _,n in ipairs({store.first,store.count}) do
+        local c,e=encode_value(n); if not c then return nil,e end
+        out[#out+1]=c
+    end
+    for _,n in ipairs(store.values) do
+        local c,e=encode_value(n); if not c then return nil,e end
+        out[#out+1]=c
+    end
+    return table.concat(out)
+end
+
+local function objects(store,name)
+    local out={}
+    local function visit(node)
+        if node.tag ~= TAG_OBJECT_BEGIN then return end
+        if not name or node.value.name == name then out[#out+1]=node.value end
+        for _,c in ipairs(node.value.values) do visit(c) end
+    end
+    for _,v in ipairs(store.values) do visit(v) end
+    return out
+end
+
+local function position_from_object(obj)
+    local v=obj.values
+    if obj.name=="lpr" then
+        if v[1] and v[1].tag==TAG_UTF then return v[1].value,nil end
+        if #v>=3 and v[1].tag==TAG_BYTE and v[1].value<=2 and v[2].tag==TAG_UTF and v[3].tag==TAG_LONG then
+            return v[2].value,v[3].value
+        end
+    elseif obj.name=="updated_lpr" or obj.name=="fpr" then
+        if #v>=2 and v[1].tag==TAG_UTF and v[2].tag==TAG_LONG then
+            return v[1].value,v[2].value
+        end
+    elseif obj.name=="erl" then
+        if v[1] and v[1].tag==TAG_UTF then return v[1].value,nil end
+    end
+    return nil,nil
+end
+
+local function set_object_position(obj,pos,ts)
+    local v=obj.values
+    if obj.name=="lpr" then
+        if v[1] and v[1].tag==TAG_UTF then v[1].value=pos; return true end
+        if #v>=3 and v[1].tag==TAG_BYTE and v[1].value<=2 and v[2].tag==TAG_UTF and v[3].tag==TAG_LONG then
+            v[2].value=pos; v[3].value=ts; return true
+        end
+    elseif obj.name=="updated_lpr" or obj.name=="fpr" then
+        if #v>=2 and v[1].tag==TAG_UTF and v[2].tag==TAG_LONG then v[1].value=pos; v[2].value=ts; return true end
+    elseif obj.name=="erl" then
+        if v[1] and v[1].tag==TAG_UTF then v[1].value=pos; return true end
+    end
+    return false
+end
+
+local function split_position(pos)
+    local long,pid=pos:match("^([^:]+):(%d+)$")
+    if not long then return nil,nil,"position must be LONG:PID" end
+    pid=tonumber(pid)
+    if not pid or pid>4294967295 then return nil,nil,"PID is outside uint32 range" end
+    if #long ~= 12 or not long:match("^[A-Za-z0-9+/]+$") then
+        return nil,nil,"LONG must be a 12-character base64-like Kindle coordinate"
+    end
+    return long,pid
+end
+
+local function decode_long(long)
+    local mime="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local vals={}
+    for ch in long:gmatch(".") do
+        local p=mime:find(ch,1,true)
+        if not p then return nil,"invalid native LONG" end
+        vals[#vals+1]=p-1
+    end
+    local bits={}
+    for _,v in ipairs(vals) do
+        for i=5,0,-1 do bits[#bits+1]=math.floor(v/2^i)%2 end
+    end
+    local bytes={}
+    for i=0,math.floor(#bits/8)-1 do
+        local b=0
+        for j=1,8 do b=b*2+bits[i*8+j] end
+        bytes[#bytes+1]=b
+    end
+    if #bytes~=9 or bytes[1]~=1 then return nil,"unsupported native LONG" end
+    local eid=bytes[2]+bytes[3]*256+bytes[4]*65536+bytes[5]*16777216
+    local off=bytes[6]+bytes[7]*256+bytes[8]*65536+bytes[9]*16777216
+    if eid==0 then return nil,"native EID must be nonzero" end
+    return {eid=eid,offset=off}
+end
+
+local function encode_long(eid,offset)
+    local function uint32(v)
+        return type(v)=="number" and v>=0 and v<=4294967295 and v==math.floor(v)
+    end
+    if not uint32(eid) or eid==0 or not uint32(offset) then
+        return nil,"EID/offset outside native uint32 range"
+    end
+    local bytes={1}
+    for _,v in ipairs({eid,offset}) do
+        for _=1,4 do bytes[#bytes+1]=v%256; v=math.floor(v/256) end
+    end
+    local alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    local out={}
+    for i=1,9,3 do
+        local n=bytes[i]*65536+bytes[i+1]*256+bytes[i+2]
+        for j=3,0,-1 do
+            local ix=math.floor(n/64^j)%64+1
+            out[#out+1]=alphabet:sub(ix,ix)
+        end
+    end
+    return table.concat(out)
+end
+
+-- Half-open intervals: pid <= target < pid+length. At a boundary use
+-- the next entity's offset zero; total_positions is an exclusive end.
+local function parse_position_map(data,key)
+    local header,body=data:match("^([^\n]+)\n(.*)$")
+    if not header then return nil,"missing position-map header" end
+    header=header:gsub("\r$", "")
+    local mapkey,total=header:match("^KINDLE%-POS%-MAP\t1\t([A-Za-z0-9_-]+)\t(%d+)$")
+    total=tonumber(total)
+    if mapkey~=key then return nil,"position map belongs to a different book or has an invalid header" end
+    if not total or total<1 or total>4294967295 then return nil,"invalid map total" end
+    local rows={}
+    local cursor=0
+    for line in body:gmatch("[^\n]+") do
+        line=line:gsub("\r$", "")
+        local p,e,o,n=line:match("^(%d+)\t(%d+)\t(%d+)\t(%d+)$")
+        p,e,o,n=tonumber(p),tonumber(e),tonumber(o),tonumber(n)
+        if not p or not e or not o or not n or p~=cursor or n<1 or e<1 or e>4294967295 or o+n-1>4294967295 or p+n>total then
+            return nil,"invalid map interval, gap, overlap, or overflow"
+        end
+        rows[#rows+1]={pid=p,eid=e,offset=o,length=n}
+        cursor=p+n
+    end
+    if cursor~=total then return nil,"map is incomplete" end
+    return {key=mapkey,total=total,rows=rows}
+end
+
+local function coordinate_for_pid(map,pid)
+    if type(pid)~="number" or pid<0 or pid>=map.total or pid~=math.floor(pid) then
+        return nil,"PID must be an integer in 0.."..tostring(map.total-1)
+    end
+    local lo,hi=1,#map.rows
+    while lo<=hi do
+        local mid=math.floor((lo+hi)/2)
+        local row=map.rows[mid]
+        if pid<row.pid then hi=mid-1
+        elseif pid>=row.pid+row.length then lo=mid+1
+        else return encode_long(row.eid,row.offset+pid-row.pid) end
+    end
+    return nil,"PID not found in map"
+end
+
+local function pid_for_percent(map,percent)
+    if type(percent)~="number" or percent~=percent or percent<0 or percent>100 then
+        return nil,"percent must be finite and in 0..100"
+    end
+    return math.min(map.total-1,math.floor(map.total*percent/100))
+end
+
+local function best_position(store)
+    local best=nil
+    local score=nil
+    for _,name in ipairs({"lpr","updated_lpr","erl"}) do
+        for _,obj in ipairs(objects(store,name)) do
+            local pos,ts=position_from_object(obj)
+            if pos then
+                local long,pid=split_position(pos)
+                if long then
+                    local s=(name=="lpr" and 1e15 or 0)+(ts or -1)
+                    if not score or s>score then
+                        score=s
+                        best={name=name,pos=pos,long=long,pid=pid,timestamp=ts}
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+local function split_us(line)
+    local out={}
+    local start=1
+    while true do
+        local p=line:find(string.char(31),start,true)
+        if not p then
+            out[#out+1]=line:sub(start)
+            break
+        end
+        out[#out+1]=line:sub(start,p-1)
+        start=p+1
+    end
+    return out
+end
+
+local function query_books(where)
+    local us="char(31)"
+    local sql = [[
+SELECT
+COALESCE(p_cdeKey,'') || ]]..us..[[ ||
+COALESCE(p_titles_0_nominal,'') || ]]..us..[[ ||
+COALESCE(p_location,'') || ]]..us..[[ ||
+COALESCE(CAST(p_percentFinished AS TEXT),'') || ]]..us..[[ ||
+COALESCE(CAST(p_lastAccess AS TEXT),'')
+FROM Entries
+WHERE p_type='Entry:Item'
+  AND p_location LIKE '%.kfx'
+  AND COALESCE(p_isArchived,0)=0
+]] .. (where and (" AND ("..where..")") or "") .. [[
+ORDER BY p_lastAccess DESC;
+]]
+    local cmd="sqlite3 -readonly "..shquote(CC_DB).." "..shquote(sql)
+    local out=command_output(cmd) or ""
+    local rows={}
+    for line in out:gmatch("[^\r\n]+") do
+        local f=split_us(line)
+        rows[#rows+1]={
+            key=f[1] or "", title=f[2] or "", location=f[3] or "",
+            percent=tonumber(f[4]), lastAccess=tonumber(f[5])
+        }
+    end
+    return rows
+end
+
+local function resolve_book(key)
+    if not key or not key:match("^[A-Za-z0-9_-]+$") then die("expected an exact cdeKey") end
+    local rows=query_books("p_cdeKey="..sqlquote(key))
+    if #rows==0 then die("no local KFX book for cdeKey: "..key) end
+    if #rows>1 then die("multiple local KFX entries for cdeKey: "..key) end
+    local b=rows[1]
+    if BOOK_ROOT then b.location=BOOK_ROOT.."/"..basename(b.location) end
+    return b
+end
+
+local function find_yjf(location)
+    local dir=location:gsub("%.[^%.]+$","")..".sdr"
+    local out=command_output("ls -1 "..shquote(dir).."/*.yjf")
+    if not out or out=="" then die("no .yjf sidecar found in "..dir) end
+    local paths={}
+    for path in out:gmatch("[^\r\n]+") do paths[#paths+1]=path end
+    if #paths~=1 then die("multiple .yjf sidecars in "..dir.."; cannot identify the active one") end
+    return paths[1]
+end
+
+local function load_book(key)
+    local b=resolve_book(key)
+    local yjf=find_yjf(b.location)
+    local data,err=read_file(yjf); if not data then die("cannot read "..yjf..": "..tostring(err)) end
+    local store,perr=parse_store(data); if not store then die("cannot parse KRDS: "..tostring(perr)) end
+    local round,rerr=encode_store(store); if not round then die("cannot re-encode KRDS: "..tostring(rerr)) end
+    if round ~= data then
+        die("safety check failed: unmodified KRDS does not round-trip byte-for-byte")
+    end
+    return b,yjf,data,store
+end
+
+local function print_book_header(b,yjf)
+    print("key:         "..b.key)
+    print("title:       "..b.title)
+    print("location:    "..b.location)
+    print("cc_percent:  "..(b.percent and string.format("%.8f",b.percent) or "nil"))
+    print("last_access: "..(b.lastAccess or "nil"))
+    print("sidecar:     "..yjf)
+end
+
+local function print_positions(store)
+    local any=false
+    for _,name in ipairs({"lpr","updated_lpr","erl","fpr","sync_lpr"}) do
+        local arr=objects(store,name)
+        for i,obj in ipairs(arr) do
+            any=true
+            if name=="sync_lpr" then
+                local v=obj.values[1]
+                print(string.format("%s[%d]: %s",name,i,v and tostring(v.value) or "<empty>"))
+            else
+                local pos,ts=position_from_object(obj)
+                if pos then
+                    local long,pid=split_position(pos)
+                    local dec=long and decode_long(long)
+                    print(string.format("%s[%d]: %s",name,i,pos))
+                    if ts then print(string.format("  timestamp_ms: %.0f",ts)) end
+                    if long and pid then
+                        print("  long: "..long)
+                        print("  pid:  "..pid)
+                        if dec then
+                            print("  eid:  "..dec.eid)
+                            print("  off:  "..dec.offset)
+                        end
+                    end
+                else
+                    print(string.format("%s[%d]: <unreadable>",name,i))
+                end
+            end
+        end
+    end
+    if not any then print("no known position objects found") end
+    local best=best_position(store)
+    if best then print("authoritative: "..best.pos.." ("..best.name..")") end
+end
+
+local function atomic_replace(path,newdata)
+    local tmp=path..".kindle-pos.tmp."..tostring(os.time())
+    local wok,we=write_file(tmp,newdata)
+    if not wok then return nil,"temp write failed: "..tostring(we) end
+
+    os.execute("chmod 0777 "..shquote(tmp))
+    os.execute("sync")
+    local rok,re=os.rename(tmp,path)
+    if not rok then
+        os.remove(tmp)
+        return nil,"rename failed: "..tostring(re)
+    end
+    os.execute("sync")
+    return true
+end
+
+local function set_position(key,value,map_path,is_percent)
+    local b,yjf,_,store=load_book(key)
+    map_path=map_path or (MAP_DIR.."/"..b.key..".posmap")
+    local data,e=read_file(map_path); if not data then die("cannot read map: "..tostring(e)) end
+    local map,me=parse_position_map(data,b.key); if not map then die(me) end
+    local pid=tonumber(value)
+    if is_percent then
+        local pe
+        pid,pe=pid_for_percent(map,pid)
+        if not pid then die(pe) end
+    end
+    local long,le=coordinate_for_pid(map,pid); if not long then die(le) end
+    local dec=assert(decode_long(long))
+
+    local target=long..":"..pid
+    local ts=math.floor(os.time()*1000)
+    local touched=0
+
+    for _,name in ipairs({"lpr","updated_lpr","erl"}) do
+        for _,obj in ipairs(objects(store,name)) do
+            if set_object_position(obj,target,ts) then touched=touched+1 end
+        end
+    end
+
+    for _,obj in ipairs(objects(store,"fpr")) do
+        local current=position_from_object(obj)
+        local current_pid
+        if current then local ignored; ignored,current_pid=split_position(current) end
+        if not current_pid or current_pid < pid then
+            if set_object_position(obj,target,ts) then touched=touched+1 end
+        end
+    end
+
+    for _,obj in ipairs(objects(store,"sync_lpr")) do
+        local first=obj.values and obj.values[1]
+        if first and first.tag==TAG_BOOLEAN then
+            first.value=true
+            touched=touched+1
+        end
+    end
+
+    if touched==0 then die("no writable LPR/ERL objects found") end
+    local encoded,ee=encode_store(store); if not encoded then die(ee) end
+
+    local verify,ve=parse_store(encoded); if not verify then die("encoded readback failed: "..tostring(ve)) end
+    local best=best_position(verify)
+    if not best or best.long~=long or best.pid~=pid then
+        die("encoded readback mismatch; refusing to replace sidecar")
+    end
+
+    local ok,ae=atomic_replace(yjf,encoded); if not ok then die(ae) end
+    print("OK")
+    print("book:   "..b.title)
+    print("target: "..target)
+    print("eid:    "..dec.eid)
+    print("offset: "..dec.offset)
+end
+
+local function export(key)
+    local b,yjf,_,store=load_book(key)
+    local best=best_position(store)
+    if not best then die("no readable native position") end
+    print(table.concat({
+        b.key,
+        b.percent and string.format("%.8f",b.percent) or "",
+        best.long,
+        tostring(best.pid),
+        best.timestamp and string.format("%.0f",best.timestamp) or "",
+        b.location,
+    },"\t"))
+end
+
+local function usage()
+    print([[
+kindle-pos - map-based Kindle KFX position reader/writer
+
+Usage:
+  kindle-pos list
+  kindle-pos get <cdeKey>
+  kindle-pos export <cdeKey>
+  kindle-pos set-pid <cdeKey> <PID> [map.posmap]
+  kindle-pos set-percent <cdeKey> <0..100> [map.posmap]
+
+Notes:
+  * Use the exact book key shown by list or the host map builder.
+  * Writes require maps/<cdeKey>.posmap built by host/kindle_map.py.
+  * Percent is a fraction of KFX positions, not an exact EPUB progress match.
+  * No backups or snapshots are created. cc.db is opened read-only.
+]])
+end
+
+-- Test/library entry point: no CLI execution and no files written on import.
+if ...=="kindle_pos_module" then
+    return {parse_store=parse_store,encode_store=encode_store,objects=objects,
+        best_position=best_position,decode_long=decode_long,encode_long=encode_long,
+        parse_position_map=parse_position_map,coordinate_for_pid=coordinate_for_pid,
+        pid_for_percent=pid_for_percent,position_from_object=position_from_object,
+        query_books=query_books}
+end
+
+local cmd=arg[1]
+if not cmd or cmd=="help" or cmd=="--help" or cmd=="-h" then
+    usage()
+elseif cmd=="list" then
+    local rows=query_books(nil)
+    print(string.format("%-34s %-9s %s","KEY","PERCENT","TITLE"))
+    for _,b in ipairs(rows) do
+        print(string.format("%-34s %-9s %s",b.key,(b.percent and string.format("%.3f",b.percent) or "-"),b.title))
+    end
+elseif cmd=="get" then
+    local b,yjf,_,store=load_book(arg[2])
+    print_book_header(b,yjf)
+    print_positions(store)
+elseif cmd=="export" then
+    export(arg[2])
+elseif cmd=="set-pid" or cmd=="set-percent" then
+    set_position(arg[2],arg[3],arg[4],cmd=="set-percent")
+else
+    die("unknown command: "..tostring(cmd))
+end
